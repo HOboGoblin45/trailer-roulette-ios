@@ -64,7 +64,7 @@ jobs:
       - name: npm install
         working-directory: app
         run: npm ci
-      - name: DIAGNOSTIC — env vars at build time
+      - name: DIAGNOSTIC ï¿½ env vars at build time
         env:
           VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
           VITE_PRIVACY_POLICY_URL: ${{ vars.VITE_PRIVACY_POLICY_URL }}
@@ -82,6 +82,7 @@ jobs:
         working-directory: app
         env:
           VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
+          VITE_TMDB_BEARER_TOKEN: ${{ secrets.VITE_TMDB_BEARER_TOKEN }}
           VITE_PRIVACY_POLICY_URL: ${{ vars.VITE_PRIVACY_POLICY_URL }}
         run: npm run build
 
