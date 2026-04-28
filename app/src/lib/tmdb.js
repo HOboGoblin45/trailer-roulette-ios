@@ -62,10 +62,14 @@ export async function discoverMovies({ genre, decade, page = 1 } = {}) {
 
 export async function getTrailer(movieId) {
   const data = await call(`/movie/${movieId}/videos`);
-  const trailer = (data.results || []).find(
-    (v) => v.site === 'YouTube' && v.type === 'Trailer',
-  );
-  return trailer || null;
+  const youtubeVideos = (data.results || []).filter((v) => v.site === 'YouTube');
+  // Prefer official Trailer → Teaser → Clip → anything YouTube
+  const order = ['Trailer', 'Teaser', 'Clip', 'Featurette', 'Behind the Scenes'];
+  for (const t of order) {
+    const found = youtubeVideos.find((v) => v.type === t);
+    if (found) return found;
+  }
+  return youtubeVideos[0] || null;
 }
 
 export async function getMovieDetails(movieId) {

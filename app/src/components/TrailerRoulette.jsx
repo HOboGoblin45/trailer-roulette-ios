@@ -84,11 +84,26 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectAsCurrent = useCallback(async (trailer) => {
+  const selectAsCurrent = useCallback(async (trailer, depth = 0) => {
     let next = trailer;
     if (!trailer.youtubeKey) {
-      const yt = await getTrailer(trailer.id);
-      if (yt) next = { ...trailer, youtubeKey: yt.key };
+      try {
+        const yt = await getTrailer(trailer.id);
+        if (yt) next = { ...trailer, youtubeKey: yt.key };
+      } catch (e) {
+        console.warn('[TrailerRoulette] getTrailer failed', e);
+      }
+    }
+    // If we still don't have a YouTube key, auto-skip up to 5 movies deep
+    // before giving up. This prevents users from seeing "No trailer available"
+    // for movies whose /videos endpoint returns nothing playable.
+    if (!next.youtubeKey && depth < 5) {
+      setQueue((q) => {
+        const rest = q.slice(1);
+        if (rest[0]) selectAsCurrent(rest[0], depth + 1);
+        return rest;
+      });
+      return;
     }
     if (next.runtime == null) {
       try {
