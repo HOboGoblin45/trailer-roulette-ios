@@ -46,6 +46,13 @@
     <key>NSAllowsArbitraryLoadsInWebContent</key>
     <false/>
 
+    <!-- Auto-answer Apple's "App Encryption Documentation" question for every
+         build. We don't ship custom crypto; iOS standard libraries (HTTPS) are
+         exempt. Setting this to false means Apple won't block builds with the
+         "Missing Compliance" status anymore. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
     <!-- AVAudioSession category for AirPlay-friendly playback when video is
          routed off-device. The actual session lives in the YouTube player on
          iOS, but declaring background modes is intentionally OMITTED — we
