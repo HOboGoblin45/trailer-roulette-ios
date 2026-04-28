@@ -51,14 +51,6 @@
 	<string>Dark</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>WKAppBoundDomains</key>
-	<array>
-		<string>youtube.com</string>
-		<string>youtu.be</string>
-		<string>youtube-nocookie.com</string>
-		<string>themoviedb.org</string>
-		<string>image.tmdb.org</string>
-		<string>api.themoviedb.org</string>
-	</array>
 </dict>
 </plist>
+

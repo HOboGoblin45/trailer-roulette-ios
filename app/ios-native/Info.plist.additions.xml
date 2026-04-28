@@ -40,16 +40,9 @@
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
 
-    <!-- Allow autoplay for the embedded YouTube web view. -->
-    <key>WKAppBoundDomains</key>
-    <array>
-        <string>youtube.com</string>
-        <string>youtu.be</string>
-        <string>youtube-nocookie.com</string>
-        <string>themoviedb.org</string>
-        <string>image.tmdb.org</string>
-        <string>api.themoviedb.org</string>
-    </array>
+    <!-- WKAppBoundDomains was here; removed because it activates app-bound mode
+         which restricts what scripts can do (including blocking TMDB API calls
+         from our JS layer). We rely on CapacitorHttp + standard ATS instead. -->
     <key>NSAllowsArbitraryLoadsInWebContent</key>
     <false/>
 

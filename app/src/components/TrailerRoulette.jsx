@@ -23,6 +23,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
 
   // Watchlist set, kept in memory for fast lookup; persisted on changes.
   const [watchlistIds, setWatchlistIds] = useState(new Set());
+  const [loadError, setLoadError] = useState(null);
 
   const timerRef = useRef(null);
 
@@ -53,6 +54,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   // Load queue whenever filters change.
   const loadQueue = useCallback(async (f, p) => {
     try {
+      setLoadError(null);
       const data = await discoverMovies({ genre: f.genre, decade: f.decade });
       const candidates = (data.results || []).map((m) => ({
         id: m.id,
@@ -73,6 +75,11 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       }
     } catch (err) {
       console.error('[TrailerRoulette] loadQueue failed', err);
+      const msg = err?.message || String(err);
+      const apiKeyHint = (typeof import.meta.env.VITE_TMDB_API_KEY === 'string' && import.meta.env.VITE_TMDB_API_KEY.length > 20)
+        ? 'API key bundled (' + import.meta.env.VITE_TMDB_API_KEY.length + ' chars)'
+        : 'API key MISSING from build (' + (import.meta.env.VITE_TMDB_API_KEY || 'undefined') + ')';
+      setLoadError(msg + ' | ' + apiKeyHint);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -182,6 +189,16 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
         watchlistCount={watchlistIds.size}
         cycleProgress={(CYCLE_SECONDS - secondsLeft) / CYCLE_SECONDS}
       />
+
+      {loadError && (
+        <div style={{
+          background: '#E26D5C', color: '#fff', padding: '12px 16px',
+          fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word'
+        }}>
+          <strong>TMDB load failed:</strong> {loadError}
+        </div>
+      )}
 
       <div className="player-wrap">
         <Player
