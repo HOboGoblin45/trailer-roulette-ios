@@ -25,4 +25,15 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+  # Disable code signing on pod targets — only the App target needs the
+  # provisioning profile. Without this, xcodebuild propagates the App's
+  # PROVISIONING_PROFILE_SPECIFIER to every pod target and they error out
+  # with "<PodName> does not support provisioning profiles".
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
+      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+    end
+  end
 end

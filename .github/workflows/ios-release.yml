@@ -90,22 +90,6 @@ jobs:
           VERSION="${TAG#v}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
           echo "Set CFBundleShortVersionString to $VERSION"
-      - name: DIAGNOSTIC — secret lengths
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          echo "P12 b64 length: ${#BUILD_CERTIFICATE_BASE64}"
-          echo "P12 pwd length: ${#P12_PASSWORD}"
-          echo "Keychain pwd length: ${#KEYCHAIN_PASSWORD}"
-          echo "P12 b64 starts: $(echo -n \"$BUILD_CERTIFICATE_BASE64\" | head -c 20)"
-          echo "P12 b64 ends: $(echo -n \"$BUILD_CERTIFICATE_BASE64\" | tail -c 20)"
-          # Decode and check P12 file
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode > /tmp/test.p12
-          echo "Decoded P12 size: $(stat -f%z /tmp/test.p12)"
-          # Try to read it with openssl
-          openssl pkcs12 -in /tmp/test.p12 -nokeys -noout -passin "pass:$P12_PASSWORD" 2>&1 || echo "openssl failed"
 
       - name: Import code-signing certificate
         env:
