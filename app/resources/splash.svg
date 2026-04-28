@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="80%">
+      <stop offset="0%" stop-color="#1B2A4A"/>
+      <stop offset="100%" stop-color="#0E1726"/>
+    </radialGradient>
+    <radialGradient id="goldGrad" cx="35%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#F1CB60"/>
+      <stop offset="55%" stop-color="#D4AF37"/>
+      <stop offset="100%" stop-color="#9A7B1F"/>
+    </radialGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="url(#bgGrad)"/>
+  <g transform="translate(1366 1366)">
+    <circle r="500" fill="url(#goldGrad)"/>
+    <circle r="430" fill="none" stroke="#0E1726" stroke-width="10" opacity="0.5"/>
+    <g fill="#0E1726">
+      <circle cx="0" cy="-313" r="83"/>
+      <circle cx="221" cy="-221" r="83"/>
+      <circle cx="313" cy="0" r="83"/>
+      <circle cx="221" cy="221" r="83"/>
+      <circle cx="0" cy="313" r="83"/>
+      <circle cx="-221" cy="221" r="83"/>
+      <circle cx="-313" cy="0" r="83"/>
+      <circle cx="-221" cy="-221" r="83"/>
+    </g>
+    <circle r="100" fill="#0E1726"/>
+    <circle r="85" fill="url(#goldGrad)"/>
+    <circle r="28" fill="#0E1726"/>
+  </g>
+</svg>

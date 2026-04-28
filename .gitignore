@@ -1,0 +1,26 @@
+# Workspace-level gitignore
+# (app/.gitignore already handles node_modules, dist, .env.local, etc.)
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Secrets and signing materials (these live outside the workspace; this is belt-and-suspenders)
+*.p12
+*.cer
+*.pem
+*.key
+*.mobileprovision
+AuthKey_*.p8
+.secrets-cache.json
+
+# Build artifacts that shouldn't end up in the repo
+build/
+*.xcarchive/
+*.ipa
+
+# Capacitor-generated iOS folder (will be created by ios-bootstrap workflow and committed back by it)
+# Keep app/ios/ tracked once bootstrap commits it; until then it's missing which is fine.

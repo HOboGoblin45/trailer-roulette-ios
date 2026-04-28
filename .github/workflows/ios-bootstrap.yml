@@ -1,0 +1,154 @@
+name: iOS Bootstrap (one-time)
+
+# Runs `npx cap add ios` ONCE on a macOS runner and commits the generated
+# ios/ folder back to the repo. After this runs successfully, you should
+# never run it again — the iOS folder is now committed and `cap sync` keeps
+# it up to date.
+#
+# Trigger manually: GitHub → Actions → "iOS Bootstrap (one-time)" → Run workflow.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to push the ios/ folder back
+
+jobs:
+  bootstrap:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail if iOS already exists
+        run: |
+          if [ -d "app/ios/App" ]; then
+            echo "::error::app/ios/App already exists. Bootstrap should only run once."
+            echo "If you really want to regenerate, delete app/ios/ and re-run."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: false
+
+      - name: Install CocoaPods
+        run: gem install cocoapods
+
+      - name: npm install
+        working-directory: app
+        env:
+          # First-time bootstrap doesn't need real keys; CI just runs cap add ios.
+          VITE_TMDB_API_KEY: dummy-for-bootstrap
+          VITE_PRIVACY_POLICY_URL: https://example.com/privacy
+        run: |
+          npm ci
+          npm run build
+
+      - name: cap add ios
+        working-directory: app
+        run: npx cap add ios
+
+      - name: Merge Info.plist additions
+        working-directory: app
+        run: |
+          set -e
+          PLIST_DST="ios/App/App/Info.plist"
+          PLIST_ADD="ios-native/Info.plist.additions.xml"
+
+          # Use plutil + a Python script to merge keys.
+          python3 - <<'PY'
+          import plistlib
+          import xml.etree.ElementTree as ET
+
+          dst_path = "ios/App/App/Info.plist"
+          add_path = "ios-native/Info.plist.additions.xml"
+
+          with open(dst_path, "rb") as f:
+              dst = plistlib.load(f)
+
+          tree = ET.parse(add_path)
+          plist = tree.find("dict")
+          # Walk the additions dict
+          children = list(plist) if plist is not None else []
+          i = 0
+          while i < len(children):
+              k = children[i]
+              v = children[i+1]
+              if k.tag == "key":
+                  key = k.text
+                  if v.tag == "string":
+                      dst[key] = v.text
+                  elif v.tag == "true":
+                      dst[key] = True
+                  elif v.tag == "false":
+                      dst[key] = False
+                  elif v.tag == "array":
+                      dst[key] = [c.text for c in v if c.tag == "string"]
+                  i += 2
+              else:
+                  i += 1
+
+          with open(dst_path, "wb") as f:
+              plistlib.dump(dst, f)
+          print("Info.plist merged.")
+          PY
+
+      - name: Copy pre-rendered app icons into AppIcon.appiconset
+        working-directory: app
+        run: |
+          set -e
+          ICON_DST="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+          mkdir -p "$ICON_DST"
+          cp ../assets/icons/icon-*.png "$ICON_DST/"
+          cp ../assets/icons/Contents.json "$ICON_DST/"
+          echo "Icons copied:"
+          ls -la "$ICON_DST/"
+
+      - name: Generate splash from SVG and run capacitor-assets
+        working-directory: app
+        run: |
+          set -e
+          # Render splash from the SVG source
+          brew install librsvg 2>&1 | tail -3 || true
+          if command -v rsvg-convert >/dev/null 2>&1; then
+            rsvg-convert -w 2732 -h 2732 resources/splash.svg -o resources/splash.png
+          else
+            # macOS comes with sips
+            cp resources/splash.svg /tmp/splash.svg
+            qlmanage -t -s 2732 -o /tmp /tmp/splash.svg 2>/dev/null || true
+            cp /tmp/splash.svg.png resources/splash.png 2>/dev/null || \
+              cp ../assets/launch-screen.png resources/splash.png
+          fi
+          # Also seed the icon for capacitor-assets
+          cp ../assets/icons/icon-1024.png resources/icon.png
+          npx @capacitor/assets generate --ios --assetPath resources || true
+          echo "Splash generation complete"
+
+      - name: Configure Xcode signing settings (skip — handled in release workflow)
+        run: echo "Bootstrap done. Release workflow handles signing."
+
+      - name: Commit and push iOS folder
+        working-directory: app
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ios/
+          git diff --staged --quiet && echo "Nothing to commit" && exit 0
+          git commit -m "iOS bootstrap: generated iOS Xcode project via cap add ios
+
+          - cap add ios output committed
+          - Info.plist additions merged
+          - Ready for ios-release.yml to take over"
+          git push

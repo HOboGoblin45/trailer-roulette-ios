@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Trailer Roulette</title>
+  <meta name="description" content="Trailer Roulette doesn't collect data. This page documents what that means in detail." />
+  <meta name="theme-color" content="#0E1726" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    :root { --bg:#0E1726;--bg-2:#16213A;--fg:#F4F4F2;--fg-dim:#A6ADBB;--gold:#D4AF37; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; line-height:1.6; }
+    a { color:var(--gold); }
+    main { max-width:760px; margin:0 auto; padding:64px 24px 96px; }
+    h1 { font-size:clamp(32px,5vw,48px); margin:0 0 8px; letter-spacing:-0.5px; }
+    h1 .accent { color:var(--gold); font-style:italic; font-family:'Playfair Display',Georgia,serif; font-weight:700; }
+    .meta { color:var(--fg-dim); font-size:14px; margin:0 0 32px; }
+    h2 { font-size:22px; margin:32px 0 12px; color:var(--gold); text-transform:uppercase; letter-spacing:0.5px; }
+    h3 { font-size:16px; margin:20px 0 8px; }
+    p, li { color:var(--fg-dim); }
+    .summary {
+      background:var(--bg-2); padding:20px 24px; border-radius:12px;
+      border-left:4px solid var(--gold);
+    }
+    .summary p:last-child { margin-bottom:0; }
+    table { width:100%; border-collapse:collapse; margin:16px 0; }
+    th, td { text-align:left; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06); font-size:14px; }
+    th { color:var(--fg); }
+    code { background:var(--bg-2); padding:2px 6px; border-radius:4px; font-size:13px; }
+    nav { padding:24px; border-bottom:1px solid rgba(255,255,255,0.05); }
+    nav .logo { font-size:16px; font-weight:600; letter-spacing:0.5px; }
+    nav .logo .accent { color:var(--gold); font-style:italic; font-family:'Playfair Display',Georgia,serif; }
+  </style>
+</head>
+<body>
+  <nav><a href="/" style="text-decoration:none; color:inherit;"><span class="logo">Trailer <span class="accent">Roulette</span></span></a></nav>
+  <main>
+    <h1>Privacy <span class="accent">Policy</span></h1>
+    <p class="meta">Effective date: TBD · Last updated: 2026-04-25 · Contact: <a href="mailto:crescicharles@gmail.com">crescicharles@gmail.com</a></p>
+
+    <div class="summary">
+      <p><strong>Plain English:</strong> We don't collect anything. Everything stays on your device.</p>
+    </div>
+
+    <h2>What we collect</h2>
+    <p>Nothing. Trailer Roulette stores all preferences (watchlist, taste profile, filter settings, app state) locally on your device using Apple's standard Preferences storage.</p>
+    <p>We do not run analytics on you, do not have user accounts, do not require login, and have no backend that holds your data.</p>
+
+    <h2>Third-party services</h2>
+    <table>
+      <thead>
+        <tr><th>Service</th><th>What's sent</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>TMDB</td>
+          <td>API key (the app's), search/filter parameters</td>
+          <td>Movie metadata (titles, posters, descriptions)</td>
+        </tr>
+        <tr>
+          <td>YouTube (via SFSafariViewController)</td>
+          <td>The trailer URL the user tapped</td>
+          <td>YouTube serves the player; YouTube's <a href="https://policies.google.com/privacy">privacy practices</a> apply during playback</td>
+        </tr>
+        <tr>
+          <td>Apple App Store / TestFlight</td>
+          <td>Crash reports and aggregate usage stats (Apple-mediated)</td>
+          <td>Per Apple's own <a href="https://www.apple.com/legal/privacy/">privacy policy</a></td>
+        </tr>
+      </tbody>
+    </table>
+    <p>None of these services receive personally identifiable information from us. We never identify you to TMDB or to any third party.</p>
+
+    <h2>What we don't do</h2>
+    <ul>
+      <li>No tracking across apps or websites</li>
+      <li>No advertising IDs (no IDFA usage)</li>
+      <li>No selling, sharing, or transmitting any personal data</li>
+      <li>No third-party SDKs that fingerprint or profile users</li>
+      <li>No push notifications (no notification token to collect)</li>
+      <li>No location, camera, microphone, contacts, or photo library access</li>
+    </ul>
+
+    <h2>App Store Privacy Nutrition Label</h2>
+    <p><strong>Data Not Collected.</strong> All data types under all categories.</p>
+
+    <h2>Children</h2>
+    <p>Trailer Roulette is not directed at children under 13. Movie and TV trailers may include content (violence, language, mature themes) per the source studios' classifications. We rely on the App Store age rating; parents should use Screen Time / Family Sharing for additional controls.</p>
+
+    <h2>Data deletion</h2>
+    <p>Uninstalling the app deletes all locally stored data. There is no server-side data to request deletion of.</p>
+
+    <h2>Changes to this policy</h2>
+    <p>We'll update the "Last Updated" date and post the new version at this URL. Material changes will be called out in the app's "What's New" notes at next release.</p>
+
+    <h2>Contact</h2>
+    <p><a href="mailto:crescicharles@gmail.com">crescicharles@gmail.com</a></p>
+  </main>
+</body>
+</html>

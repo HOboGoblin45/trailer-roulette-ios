@@ -1,0 +1,11 @@
+/*
+ * Safe-area inset variables. Capacitor + viewport-fit=cover give us the env()
+ * vars for free; we just expose them as CSS custom properties so components
+ * can opt in without dealing with prefixes.
+ */
+:root {
+  --sa-top: env(safe-area-inset-top, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
+  --sa-bottom: env(safe-area-inset-bottom, 0px);
+  --sa-left: env(safe-area-inset-left, 0px);
+}

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Info.plist additions for Trailer Roulette.
+
+  After `npx cap add ios`, open `ios/App/App/Info.plist` in Xcode and merge
+  the keys below. Don't replace the file wholesale — Capacitor populates the
+  baseline keys (CFBundleIdentifier, etc.) and overwriting will break codesign.
+
+  None of these keys grant data-collection permissions; we collect nothing.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Display name on the home screen. Capacitor sets this from appName,
+         but listing it explicitly lets you localize per-region in v1.1. -->
+    <key>CFBundleDisplayName</key>
+    <string>Trailer Roulette</string>
+
+    <!-- Supported orientations. Landscape is critical for video. -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- Default to dark UI to match our palette. -->
+    <key>UIUserInterfaceStyle</key>
+    <string>Dark</string>
+
+    <!-- Status bar style coordinated with our dark navy header. -->
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleLightContent</string>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+
+    <!-- Allow autoplay for the embedded YouTube web view. -->
+    <key>WKAppBoundDomains</key>
+    <array>
+        <string>youtube.com</string>
+        <string>youtu.be</string>
+        <string>youtube-nocookie.com</string>
+        <string>themoviedb.org</string>
+        <string>image.tmdb.org</string>
+        <string>api.themoviedb.org</string>
+    </array>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <false/>
+
+    <!-- AVAudioSession category for AirPlay-friendly playback when video is
+         routed off-device. The actual session lives in the YouTube player on
+         iOS, but declaring background modes is intentionally OMITTED — we
+         do NOT want background audio (would require modifying the player). -->
+
+    <!-- TMDB attribution surfaced in About; no Info.plist key required. -->
+
+    <!-- Privacy strings: we don't request these capabilities, but we list
+         them as explicit "not used" for App Review clarity. Apple ignores
+         absent keys; including these makes the posture obvious. -->
+
+    <!-- (No NSCameraUsageDescription, NSMicrophoneUsageDescription,
+         NSLocationWhenInUseUsageDescription, NSPhotoLibraryUsageDescription
+         are listed because we never invoke those APIs. Adding usage strings
+         for unused APIs is itself a 4.2 / 5.1.1 risk.) -->
+</dict>
+</plist>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Trailer Roulette icon">
+  <rect width="1024" height="1024" fill="#0E1726"/>
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#1B2A4A" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#0E1726" stop-opacity="1"/>
+    </radialGradient>
+    <radialGradient id="goldGrad" cx="35%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#F1CB60"/>
+      <stop offset="55%" stop-color="#D4AF37"/>
+      <stop offset="100%" stop-color="#9A7B1F"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <g transform="translate(512 512)">
+    <circle r="430" fill="none" stroke="#0E1726" stroke-width="60"/>
+    <g stroke="#D4AF37" stroke-width="60" fill="none" stroke-linecap="butt">
+      <path d="M 430 0 A 430 430 0 0 1 372.4 215"/>
+      <path d="M 215 372.4 A 430 430 0 0 1 -57.6 426.1"/>
+      <path d="M -293.7 314.5 A 430 430 0 0 1 -426.1 -57.6"/>
+      <path d="M -372.4 -215 A 430 430 0 0 1 -215 -372.4"/>
+      <path d="M 57.6 -426.1 A 430 430 0 0 1 293.7 -314.5"/>
+      <path d="M 372.4 -215 A 430 430 0 0 1 430 0"/>
+    </g>
+    <circle r="350" fill="url(#goldGrad)"/>
+    <circle r="300" fill="none" stroke="#0E1726" stroke-width="8" opacity="0.5"/>
+    <g fill="#0E1726">
+      <circle cx="0" cy="-220" r="58"/>
+      <circle cx="155.6" cy="-155.6" r="58"/>
+      <circle cx="220" cy="0" r="58"/>
+      <circle cx="155.6" cy="155.6" r="58"/>
+      <circle cx="0" cy="220" r="58"/>
+      <circle cx="-155.6" cy="155.6" r="58"/>
+      <circle cx="-220" cy="0" r="58"/>
+      <circle cx="-155.6" cy="-155.6" r="58"/>
+    </g>
+    <circle r="70" fill="#0E1726"/>
+    <circle r="60" fill="url(#goldGrad)"/>
+    <circle r="20" fill="#0E1726"/>
+  </g>
+</svg>

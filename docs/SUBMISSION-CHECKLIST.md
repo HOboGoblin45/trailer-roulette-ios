@@ -1,0 +1,161 @@
+# App Store submission checklist
+
+Single source of truth for "ready to submit." Walk this top to bottom. Don't skip.
+
+## 0. Pre-flight (do these days before submit-day)
+
+- [ ] All `BUG-BASH-CHECKLIST.md` items green on internal TestFlight builds
+- [ ] At least 3 days of TestFlight stability (no crashes from internal group)
+- [ ] At least 2 external testers signed off
+- [ ] Privacy policy hosted at a public URL (e.g., `https://trailer-roulette-landing-<hash>.vercel.app/privacy` for v1; will swap to `trailerroulette.app/privacy` post-launch)
+- [ ] Vercel deployment of `landing-page/` working and reachable
+
+## 1. Build
+
+- [ ] Version number bumped in `package.json` and Xcode (CFBundleShortVersionString = `1.0.0`)
+- [ ] Build number bumped (CFBundleVersion = whatever's next; integer or `1.0.0.N`)
+- [ ] `npm run build` clean
+- [ ] `./scripts/build-ios.sh` produces a valid archive
+- [ ] Archive validates in Xcode → Organizer → Validate App
+
+## 2. App Store Connect — App Information
+
+- [ ] Name: `Trailer Roulette`
+- [ ] Subtitle: `Shuffle. Discover. Save.`
+- [ ] Bundle ID: `app.trailerroulette.ios`
+- [ ] SKU: `trailerroulette-ios-v1`
+- [ ] Primary language: English (U.S.)
+- [ ] Category: Primary = Entertainment, Secondary = Lifestyle
+- [ ] Content Rights: We confirm we either own or have a license for all content
+- [ ] Age Rating: filled (likely 12+ or 17+ depending on trailer content classification — answer honestly; trailers may include violence/language per studio classifications)
+
+## 3. Pricing & Availability
+
+- [ ] Price: Free
+- [ ] Availability: Soft launch in **Canada** or **Australia** first; expand to all territories after 7 days no critical issues
+- [ ] Pre-orders: off
+- [ ] Volume Purchase Program: off (consumer app)
+
+## 4. App Privacy
+
+- [ ] **Data Not Collected** declared (see `docs/PRIVACY-NUTRITION-LABEL.md`)
+- [ ] Tracking: **No**
+- [ ] Privacy policy URL: filled
+- [ ] Privacy choices URL: leave blank (we don't collect, so no choices to offer)
+
+## 5. Version 1.0 metadata
+
+### Description
+- [ ] Pasted from `store-listing/description.md`
+- [ ] Length under 4000 chars
+- [ ] No banned phrases (see description.md footer)
+- [ ] TMDB attribution present
+
+### Keywords
+- [ ] Pasted from `store-listing/keywords.md`
+- [ ] Length 78 / 100
+
+### Promotional text
+- [ ] Pasted from `store-listing/promotional-text.md`
+- [ ] Length under 170 chars
+
+### What's New
+- [ ] Pasted from `store-listing/whats-new-v1.0.md`
+
+### Support URL
+- [ ] `https://trailerroulette.app` (or wherever your support contact lives)
+
+### Marketing URL
+- [ ] `https://trailerroulette.app` (same)
+
+## 6. Screenshots
+
+- [ ] 6.7-inch: 5 PNGs at 1290×2796, in `assets/screenshots/6.7-inch/`
+- [ ] 6.5-inch: 5 PNGs at 1242×2688, in `assets/screenshots/6.5-inch/`
+- [ ] 5.5-inch: 5 PNGs at 1242×2208, in `assets/screenshots/5.5-inch/`
+- [ ] (If supporting iPad) iPad Pro 12.9": 5 PNGs at 2048×2732
+- [ ] All show real app data (no placeholder Lorem ipsum)
+- [ ] Captions added (see `assets/screenshots/specs.md`)
+
+## 7. App Preview video (optional but recommended)
+
+- [ ] 15–30s, no audio voiceover (music ok if license-cleared)
+- [ ] Encoded as H.264 MP4, ~1080p portrait
+- [ ] Uploaded for at least the 6.7-inch device
+
+## 8. Build attached
+
+- [ ] In App Store Connect, "Version 1.0" → "Build" → select your TestFlight build
+- [ ] Export Compliance: confirm "no, your app does not use encryption" (Capacitor doesn't add custom crypto; HTTPS uses iOS standard libraries)
+- [ ] Content Rights: same as App Information
+
+## 9. App Review Information
+
+- [ ] Sign-in required: **No**
+- [ ] Demo account credentials: leave blank (no login)
+- [ ] Notes for the reviewer:
+
+```
+Trailer Roulette is a personalized movie-discovery app. Trailer playback is one feature among many.
+
+Highlights for review:
+• Watchlist — saved trailers, persisted locally, no accounts
+• Seen it / Skip it swipes — left/right gestures during/after playback feed an on-device taste profile
+• Learned shuffle weighting — biases future queues toward the user's affinity buckets (genre, decade, runtime)
+• Filter UI — genre + decade chips shape the queue
+• Trailers play via YouTube's official embedded player inside SFSafariViewController. We do not host, modify, or redistribute trailer content. We comply with YouTube's Terms of Service.
+
+This is not a YouTube wrapper. The discovery loop, watchlist, taste profile, and curation logic all run on-device and are independent of YouTube.
+
+Movie metadata from TMDB API; required attribution is in About and at the bottom of the description.
+
+Privacy posture: no accounts, no tracking, no analytics SDKs. Privacy nutrition label = "Data Not Collected."
+
+Test path:
+1. Tap Play to open a trailer (in-app browser opens YouTube)
+2. After ~90s, the cycle timer auto-closes the browser and advances to the next trailer
+3. Swipe right on the player area to mark "Seen it" → updates local taste profile
+4. Tap the heart icon to save to Watchlist
+5. View Watchlist via the heart in the header
+6. About screen shows the TMDB attribution and privacy posture
+
+Contact: crescicharles@gmail.com
+```
+
+- [ ] Contact info: Charlie Cresci, crescicharles@gmail.com, phone optional
+- [ ] Attachment: `research/why-this-app-is-original.md` exported as PDF (the rebuttal memo, ready for any 4.2/5.2 challenge)
+
+## 10. Final pre-submit sanity check
+
+- [ ] Open the listing preview in App Store Connect; read it as a stranger would
+- [ ] Verify all 5 screenshots load and are in the right order
+- [ ] Verify privacy policy URL renders
+- [ ] One last TestFlight install on a clean device to confirm the build is good
+
+## 11. Submit
+
+- [ ] **Submit for Review**
+- [ ] Note the submission timestamp in `docs/bugs.md` "Submission log"
+- [ ] Set a calendar reminder for +48h to check on review status
+
+## 12. While waiting (24–72h typical)
+
+- [ ] Don't push code changes that would invalidate the build
+- [ ] Monitor Resolution Center daily
+- [ ] If rejected:
+  - Read the rejection carefully
+  - If 4.2/5.2: paste the rebuttal memo from `research/why-this-app-is-original.md` into Resolution Center
+  - If a real bug: fix, increment build number, resubmit
+  - Each resubmit is 24–48h of review
+
+## 13. Approved → Launch
+
+- [ ] Confirm soft-launch country setting still narrow (CA or AU)
+- [ ] **Release** in App Store Connect
+- [ ] Verify app is live (search by name)
+- [ ] Tweet, Post on Reddit (carefully — see press kit), email friends
+- [ ] Day 1 metrics check at +24h:
+  - [ ] Crashes: 0 (or 1-2 known)
+  - [ ] Reviews: respond to first 3 within 24h
+  - [ ] Downloads tracked
+- [ ] Expand to all territories at +7 days if Day 1–7 are clean

@@ -1,0 +1,212 @@
+name: iOS Release (build + upload to TestFlight)
+
+# Builds, code-signs, archives, and uploads the iOS app to TestFlight.
+# Runs on macOS runner; consumes secrets for signing + App Store Connect API.
+#
+# Triggered:
+#   - manually via workflow_dispatch
+#   - on push of a tag matching v*.*.* (e.g., v1.0.0, v1.0.1)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build number (CFBundleVersion). Increment for each upload.'
+        required: true
+        default: '1'
+
+permissions:
+  contents: read
+
+env:
+  XCODE_WORKSPACE: app/ios/App/App.xcworkspace
+  XCODE_SCHEME: App
+  ARCHIVE_PATH: build/TrailerRoulette.xcarchive
+  EXPORT_PATH: build/export
+  IPA_NAME: App.ipa
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Install CocoaPods
+        run: gem install cocoapods
+
+      - name: Cache Pods
+        uses: actions/cache@v4
+        with:
+          path: app/ios/App/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('app/ios/App/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-pods-
+
+      - name: npm install
+        working-directory: app
+        run: npm ci
+
+      - name: Build web
+        working-directory: app
+        env:
+          VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
+          VITE_PRIVACY_POLICY_URL: ${{ vars.VITE_PRIVACY_POLICY_URL }}
+        run: npm run build
+
+      - name: cap sync ios
+        working-directory: app
+        run: npx cap sync ios
+
+      - name: pod install
+        working-directory: app/ios/App
+        run: pod install
+
+      - name: Set build number
+        working-directory: app/ios/App
+        run: |
+          BUILD="${{ github.event.inputs.build_number || github.run_number }}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" App/Info.plist
+          echo "Set CFBundleVersion to $BUILD"
+
+      - name: Set marketing version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: app/ios/App
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
+          echo "Set CFBundleShortVersionString to $VERSION"
+
+      - name: Import code-signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Decode the P12
+          CERT_PATH=$RUNNER_TEMP/build_certificate.p12
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import the cert
+          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Install provisioning profile
+        env:
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+        run: |
+          PROFILE_PATH=$RUNNER_TEMP/build.mobileprovision
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o "$PROFILE_PATH"
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          # Extract the UUID from the profile so we can reference it in ExportOptions
+          UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<<"$(security cms -D -i "$PROFILE_PATH")")
+          NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<<"$(security cms -D -i "$PROFILE_PATH")")
+          echo "PROVISIONING_PROFILE_UUID=$UUID" >> $GITHUB_ENV
+          echo "PROVISIONING_PROFILE_NAME=$NAME" >> $GITHUB_ENV
+          cp "$PROFILE_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/"$UUID.mobileprovision"
+
+      - name: Build archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            archive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_NAME" \
+            CODE_SIGN_IDENTITY="iPhone Distribution"
+
+      - name: Generate ExportOptions.plist
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          mkdir -p "$EXPORT_PATH"
+          cat > "$EXPORT_PATH/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>$APPLE_TEAM_ID</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>compileBitcode</key>
+              <false/>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>app.trailerroulette.ios</key>
+                  <string>$PROVISIONING_PROFILE_NAME</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Export IPA
+        run: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist "$EXPORT_PATH/ExportOptions.plist"
+
+      - name: Upload to App Store Connect
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          # Apple's altool wants the .p8 in ~/.appstoreconnect/private_keys/
+          API_KEY_DIR=~/.appstoreconnect/private_keys
+          mkdir -p "$API_KEY_DIR"
+          echo -n "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$API_KEY_DIR/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8"
+
+          # Upload
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$EXPORT_PATH/$IPA_NAME" \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_KEY_ISSUER_ID"
+
+      - name: Upload archive as artifact (for debugging if upload fails)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcarchive
+          path: ${{ env.ARCHIVE_PATH }}
+          retention-days: 7
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
