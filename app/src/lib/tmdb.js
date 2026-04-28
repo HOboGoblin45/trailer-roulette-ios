@@ -1,32 +1,47 @@
 /**
  * TMDB API wrapper — minimal surface for the iOS port.
  *
- * The API key is intentionally read from import.meta.env at build time so it can
- * differ per environment. For App Store compliance we attribute TMDB in About.
+ * Auth strategy: prefer v4 Bearer token via Authorization header (the modern
+ * TMDB recommendation, and more reliable through Capacitor's native iOS HTTP
+ * layer than v3 query-string auth which the WKWebView CORS layer was mangling).
  *
- * If your existing web app already has a more sophisticated TMDB module, replace
- * this file with that module — the rest of the app only depends on the shape
- * of the trailer object documented at the bottom of this file.
+ * Falls back to v3 ?api_key= for local dev where only that's configured.
  */
 const API_BASE = 'https://api.themoviedb.org/3';
 const IMG_BASE = 'https://image.tmdb.org/t/p';
 
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
+const BEARER = import.meta.env.VITE_TMDB_BEARER_TOKEN || '';
 
-if (!API_KEY) {
-  console.warn(
-    '[tmdb] VITE_TMDB_API_KEY is not set. Configure it in .env.local before running.',
-  );
+if (!API_KEY && !BEARER) {
+  console.warn('[tmdb] Neither VITE_TMDB_API_KEY nor VITE_TMDB_BEARER_TOKEN is set');
 }
 
 async function call(path, params = {}) {
   const url = new URL(API_BASE + path);
-  url.searchParams.set('api_key', API_KEY);
   for (const [k, v] of Object.entries(params)) {
     if (v != null) url.searchParams.set(k, v);
   }
-  const r = await fetch(url.toString());
-  if (!r.ok) throw new Error(`TMDB ${r.status}: ${r.statusText}`);
+  const headers = { Accept: 'application/json' };
+  if (BEARER) {
+    headers.Authorization = `Bearer ${BEARER}`;
+  } else if (API_KEY) {
+    url.searchParams.set('api_key', API_KEY);
+  }
+  let r;
+  try {
+    r = await fetch(url.toString(), { headers });
+  } catch (e) {
+    const err = new Error(`TMDB network error: ${e.message || e}`);
+    err.cause = e;
+    throw err;
+  }
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    const err = new Error(`TMDB ${r.status} ${r.statusText} @ ${path} :: ${body.slice(0, 200)}`);
+    err.status = r.status;
+    throw err;
+  }
   return r.json();
 }
 
