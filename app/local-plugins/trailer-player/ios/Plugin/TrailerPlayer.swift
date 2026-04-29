@@ -371,7 +371,7 @@ function bootPlayer() {
         modestbranding: 1,
         controls: 1,
         fs: 1,
-        origin: 'https://www.youtube.com'
+        origin: 'https://trailer-roulette.vercel.app'
       },
       events: {
         onReady: 'onReady',
@@ -443,11 +443,21 @@ window.onresize = function () {
 
     private func loadPlayerHTML() {
         let html = playerHTML()
-        // baseURL = https://www.youtube.com gives WKWebView a real-looking
-        // origin. Sub-resource requests pick up Referer: https://www.youtube.com/
-        // automatically — exactly what YouTube's embedded player terms doc
-        // requires for embedder identification.
-        let baseURL = URL(string: "https://www.youtube.com")
+        // baseURL must be a real *third-party* https origin (not
+        // youtube.com itself). Reproduced and verified in headless WebKit
+        // with iOS UA: baseURL=https://www.youtube.com produces a Referer
+        // of https://www.youtube.com/ on the iframe_api request, and
+        // YouTube rejects that as suspicious ("youtube.com embedding
+        // youtube.com") with Error 152. Using our Vercel hostname gives
+        // a third-party origin and YouTube accepts it — playback reaches
+        // state=PLAYING in ~3s under the same conditions that produce
+        // Error 152 with youtube.com baseURL.
+        //
+        // Test scripts that prove this:
+        //   scripts/test-yt-player.mjs   (real http://localhost server)
+        //   scripts/test-yt-ios-sim.mjs  (route-intercept simulating
+        //                                 iOS loadHTMLString:baseURL:)
+        let baseURL = URL(string: "https://trailer-roulette.vercel.app")
         webView.loadHTMLString(html, baseURL: baseURL)
 
         // v1.8.4: longer watchdog so the diagnostic strip has time to
