@@ -1,50 +1,65 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import TrailerPlayer from 'trailer-player';
 import { backdropUrl, posterUrl } from '../lib/tmdb.js';
-import { proxiedEmbedUrl } from '../lib/youtube.js';
 import * as haptics from '../lib/haptics.js';
 
 /**
- * iOS player (v1.5.0) — proxied YouTube embed via our Vercel-hosted page.
+ * iOS player (v1.6.0) — local TrailerPlayer Capacitor plugin.
  *
- * The full saga: WKWebView strips the HTTP Referer header from cross-
- * origin requests to injected iframes (WebKit Bug 169846). YouTube's
- * July 2025 embedder-identity update made that referer mandatory and
- * started returning "Error 153 Video player configuration error" for
- * any embed without one. We hit this whether we used the IFrame Player
- * API or a static youtube-nocookie iframe, with capacitor:// or custom
- * scheme or https://localhost — none of those origins are valid public-
- * DNS https origins that YouTube will accept.
+ * The plugin opens YouTube watch URLs in SFSafariViewController, which is
+ * a real Safari context. This sidesteps:
+ *   - WKWebView Referer-stripping bug (WebKit Bug 169846) that blocks
+ *     every iframe-based approach with YouTube error 153
+ *   - @capacitor/browser SceneDelegate fullscreen silent-fail bug
+ *     (ionic-team/capacitor#5969)
  *
- * The accepted community fix is to proxy the embed: load a tiny page on
- * a real public-DNS https origin (we already have https://trailer-
- * roulette.vercel.app/embed) and let *that* page embed the YouTube
- * iframe. YouTube sees a normal referrer from the proxy page and plays
- * the trailer. Our app's WebView just shows the proxy page in an iframe.
- *
- * This restores the inline UX of v1.1.0/v1.2.0 (no app-switching, no
- * Browser plugin, no Safari modal) while sidestepping the WebKit/YouTube
- * incompatibility entirely.
+ * UX: tap Play → fullscreen Safari modal slides up → user watches →
+ * dismiss → app advances to next trailer. The dismiss is the advance
+ * signal; matches Apple's HIG for video content (TV+, Music videos,
+ * etc. all use the same modal-fullscreen pattern).
  */
-export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause }) {
-  const [iframeLoaded, setIframeLoaded] = useState(false);
+export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded }) {
+  const openingRef = useRef(false);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Reset load state when the trailer changes.
-  useEffect(() => {
-    setIframeLoaded(false);
-  }, [trailer?.youtubeKey]);
+  // Reset error when trailer changes.
+  useEffect(() => { setError(null); }, [trailer?.youtubeKey]);
 
-  // Notify parent that we're playing as soon as we have a trailer with
-  // a key. This kicks off the auto-advance cycle timer in TrailerRoulette.
+  // If parent flips isPlaying off (e.g. background pause), close Safari.
   useEffect(() => {
-    if (trailer?.youtubeKey) {
-      onPlay?.();
-      haptics.light();
+    if (!isPlaying && openingRef.current) {
+      TrailerPlayer.closeTrailer().catch(() => {});
+      openingRef.current = false;
     }
-    return () => {
+  }, [isPlaying]);
+
+  const handlePlay = async () => {
+    if (!trailer?.youtubeKey || opening) return;
+    haptics.medium();
+    setOpening(true);
+    setError(null);
+    onPlay?.();
+    openingRef.current = true;
+    try {
+      // Resolves when the user dismisses Safari. The plugin's resolve
+      // shape is { dismissed: true, reason: 'user' | 'replaced' | ... }.
+      await TrailerPlayer.openTrailer({ youtubeKey: trailer.youtubeKey });
+      // Treat dismiss as "I'm done with this one, next" — matches the
+      // app's channel-flipping intent. Reaction is null so we don't bias
+      // the taste profile from a passive dismiss.
       onPause?.();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trailer?.youtubeKey]);
+      onEnded?.();
+    } catch (e) {
+      const msg = e?.message || String(e);
+      console.warn('[PlayerIOS] openTrailer failed', e);
+      setError(`Couldn't open trailer: ${msg}`);
+      onPause?.();
+    } finally {
+      openingRef.current = false;
+      setOpening(false);
+    }
+  };
 
   if (!trailer) {
     return (
@@ -54,55 +69,41 @@ export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause }) {
     );
   }
 
-  // No YouTube key — show backdrop with hint, no iframe.
-  if (!trailer.youtubeKey) {
-    const bg = backdropUrl(trailer.backdrop_path) || posterUrl(trailer.poster_path);
-    return (
-      <div className="player player-ios">
-        {bg && (
-          <div
-            className="player-backdrop"
-            style={{ backgroundImage: `url("${bg}")` }}
-            aria-hidden="true"
-          />
-        )}
-        <p className="player-hint">No trailer available — swipe to skip.</p>
-      </div>
-    );
-  }
-
-  // The proxy URL hides the YouTube iframe behind our public-DNS domain
-  // so YouTube's referrer check passes.
-  const src = proxiedEmbedUrl(trailer.youtubeKey, { autoplay: true, mute: false });
+  const bg = backdropUrl(trailer.backdrop_path) || posterUrl(trailer.poster_path);
+  const hasTrailer = Boolean(trailer.youtubeKey);
 
   return (
     <div className="player player-ios">
-      {!iframeLoaded && (
+      {bg && (
         <div
           className="player-backdrop"
-          style={{
-            backgroundImage: `url("${backdropUrl(trailer.backdrop_path) || posterUrl(trailer.poster_path) || ''}")`,
-          }}
+          style={{ backgroundImage: `url("${bg}")` }}
           aria-hidden="true"
         />
       )}
 
-      <iframe
-        key={trailer.youtubeKey}
-        title={trailer.title || 'Trailer'}
-        src={src}
-        frameBorder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        allowFullScreen
-        referrerPolicy="strict-origin-when-cross-origin"
-        onLoad={() => setIframeLoaded(true)}
-        style={{
-          width: '100%',
-          height: '100%',
-          border: 0,
-          background: '#000',
-        }}
-      />
+      <button
+        type="button"
+        className="player-play-button"
+        onClick={handlePlay}
+        disabled={!hasTrailer || opening}
+        aria-label={hasTrailer ? `Play ${trailer.title || 'trailer'}` : 'No trailer available'}
+      >
+        <span className="play-icon" aria-hidden="true">▶</span>
+        <span className="play-label">
+          {opening ? 'Opening…' : (hasTrailer ? 'Play trailer' : 'No trailer')}
+        </span>
+      </button>
+
+      {!hasTrailer && (
+        <p className="player-hint">Swipe to skip — we'll find another.</p>
+      )}
+
+      {error && (
+        <div role="alert" className="player-error">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

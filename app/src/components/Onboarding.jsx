@@ -145,21 +145,7 @@ export default function Onboarding({ onDone }) {
         ))}
       </div>
 
-      <button
-        onClick={next}
-        style={{
-          background: '#D4AF37',
-          color: '#0E1726',
-          border: 'none',
-          borderRadius: 999,
-          padding: '14px 32px',
-          fontSize: 16,
-          fontWeight: 700,
-          cursor: 'pointer',
-          minWidth: 200,
-          minHeight: 48, // tap-target
-        }}
-      >
+      <button className="onboarding-button" onClick={next}>
         {step >= CARDS.length - 1 ? "Let's go" : 'Next'}
       </button>
     </div>

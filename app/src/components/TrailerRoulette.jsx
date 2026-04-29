@@ -303,29 +303,10 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       />
 
       {loadError && (
-        <div style={{
-          background: '#E26D5C', color: '#fff', padding: '12px 16px',
-          fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word', display: 'flex', flexDirection: 'column', gap: 8,
-        }}>
-          <div><strong>TMDB load failed:</strong> {loadError}</div>
-          <button
-            onClick={handleRetry}
-            disabled={retrying}
-            style={{
-              alignSelf: 'flex-start',
-              background: '#fff',
-              color: '#E26D5C',
-              border: 'none',
-              borderRadius: 4,
-              padding: '6px 14px',
-              fontWeight: 600,
-              fontSize: 13,
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              opacity: retrying ? 0.6 : 1,
-            }}
-          >
+        <div className="tmdb-error-banner">
+          <div><strong>Couldn't load trailers.</strong></div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>{loadError}</div>
+          <button onClick={handleRetry} disabled={retrying}>
             {retrying ? 'Retrying…' : 'Try again'}
           </button>
         </div>

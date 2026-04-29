@@ -16,6 +16,7 @@ def capacitor_pods
   pod 'CapacitorHaptics', :path => '../../node_modules/@capacitor/haptics'
   pod 'CapacitorPreferences', :path => '../../node_modules/@capacitor/preferences'
   pod 'AirplayPlugin', :path => '../../local-plugins/airplay-plugin'
+  pod 'TrailerPlayer', :path => '../../local-plugins/trailer-player'
 end
 
 target 'App' do

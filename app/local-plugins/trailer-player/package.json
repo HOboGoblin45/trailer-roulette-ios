@@ -1,0 +1,18 @@
+{
+  "name": "trailer-player",
+  "version": "1.0.0",
+  "description": "SFSafariViewController-based YouTube trailer player for Trailer Roulette. Bypasses both the WKWebView Referer-stripping bug and the @capacitor/browser fullscreen SceneDelegate bug.",
+  "main": "src/index.js",
+  "private": true,
+  "files": [
+    "src/",
+    "ios/Plugin/",
+    "TrailerPlayer.podspec"
+  ],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "license": "UNLICENSED"
+}
