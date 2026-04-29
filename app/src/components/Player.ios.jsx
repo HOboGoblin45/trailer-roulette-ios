@@ -43,17 +43,20 @@ export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded
     openingRef.current = true;
     try {
       // Resolves when the user dismisses the in-app modal player or
-      // when the trailer ends naturally. The plugin's resolve shape is
-      // { dismissed: true, reason: 'user' | 'ended' | 'replaced' | ... }.
-      await TrailerPlayer.openTrailer({
+      // when the trailer ends naturally / errors. Resolve shape:
+      //   { dismissed: true, reason: 'user' | 'ended' | 'replaced'
+      //                            | 'unplayable:<ytErrorCode>' }
+      const result = await TrailerPlayer.openTrailer({
         youtubeKey: trailer.youtubeKey,
         title: trailer.title || '',
       });
       onPause?.();
-      // Both ended and dismissed mean "advance the queue." The taste
-      // profile is shaped by explicit Seen/Skip swipes on the card, not
-      // by passively closing a trailer.
-      onEnded?.();
+
+      // Surface unplayable-due-to-YT-restriction so the parent can mark
+      // this video id as bad and never try it again this session.
+      const reason = String(result?.reason || '');
+      const unplayable = reason.startsWith('unplayable');
+      onEnded?.({ unplayable, youtubeKey: trailer.youtubeKey, reason });
     } catch (e) {
       const msg = e?.message || String(e);
       console.warn('[PlayerIOS] openTrailer failed', e);

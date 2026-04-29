@@ -323,9 +323,25 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
                 self?.dismiss(animated: true)
             }
         case "error":
-            // Surface error code to console; don't auto-dismiss — user
-            // may still want to interact with whatever YT rendered.
-            print("[TrailerPlayer] YT player error: \(body["code"] ?? "unknown")")
+            // YT IFrame Player error codes:
+            //   2   — invalid videoId
+            //   5   — HTML5 player error
+            //   100 — video not found / made private
+            //   101 — embedding disabled by uploader
+            //   150 — same as 101 (different region/regulation)
+            //   152 — observed in 2025+ when embed.youtube-nocookie path
+            //         is blocked; matches YT's user-facing "Error 152-4"
+            // For all of these the user can never play the video here,
+            // so auto-dismiss and tell the React side to mark the key
+            // unplayable + advance the queue.
+            let code = body["code"] as? Int ?? -1
+            print("[TrailerPlayer] YT player error code=\(code)")
+            if [2, 100, 101, 150, 152].contains(code) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onDismiss("unplayable:\(code)")
+                    self?.dismiss(animated: true)
+                }
+            }
         default:
             break
         }

@@ -38,6 +38,11 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
 
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set()); // ids whose trailer key has been resolved
+  // Set of YouTube keys that we've confirmed are unplayable (embed disabled
+  // by the uploader / region-locked / removed). We record these from the
+  // iOS player's onEnded({ unplayable: true, youtubeKey }) callback and
+  // skip any movie whose resolved key is in here.
+  const unplayableKeysRef = useRef(new Set());
 
   // Boot: load profile, filters, watchlist; fetch initial queue.
   useEffect(() => {
@@ -117,10 +122,11 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
         console.warn('[TrailerRoulette] getTrailer failed', e);
       }
     }
-    // If we still don't have a YouTube key, auto-skip up to 5 movies deep
-    // before giving up. This prevents users from seeing "No trailer available"
-    // for movies whose /videos endpoint returns nothing playable.
-    if (!next.youtubeKey && depth < 5) {
+    // Skip if we have no key OR if we know this key is unplayable
+    // (embed disabled by the uploader). Auto-skip up to 5 movies deep
+    // before giving up so the user never sees a dead trailer card.
+    const keyKnownBad = next.youtubeKey && unplayableKeysRef.current.has(next.youtubeKey);
+    if ((!next.youtubeKey || keyKnownBad) && depth < 5) {
       setQueue((q) => {
         const rest = q.slice(1);
         if (rest[0]) selectAsCurrent(rest[0], depth + 1);
@@ -231,10 +237,26 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
     });
   }, [current, filters, profile, loadQueue, selectAsCurrent]);
 
-  // YouTube IFrame Player → "trailer ended naturally" → advance immediately.
-  const onTrailerEnded = useCallback(() => {
+  // iOS player → trailer finished OR dismissed OR was unplayable → advance.
+  // Payload shape: { unplayable, youtubeKey, reason }
+  //   reason 'ended'         — trailer played through → 'seen' (positive)
+  //   reason 'user'          — user tapped Done early → null (neutral)
+  //   reason 'unplayable:NN' — embed-disabled / removed → mark + skip
+  //   reason 'replaced'      — internal handoff → null
+  const onTrailerEnded = useCallback((payload) => {
     haptics.light();
-    advance('seen'); // they watched the whole thing → positive signal
+    if (payload?.unplayable && payload?.youtubeKey) {
+      unplayableKeysRef.current.add(payload.youtubeKey);
+      console.warn(
+        '[TrailerRoulette] Marking unplayable key',
+        payload.youtubeKey,
+        'reason:', payload.reason,
+      );
+      advance(null);
+      return;
+    }
+    const reaction = payload?.reason === 'ended' ? 'seen' : null;
+    advance(reaction);
   }, [advance]);
 
   // YouTube IFrame Player reports the real duration on ready — use it to
