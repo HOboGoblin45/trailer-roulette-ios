@@ -24,3 +24,11 @@ build/
 
 # Capacitor-generated iOS folder (will be created by ios-bootstrap workflow and committed back by it)
 # Keep app/ios/ tracked once bootstrap commits it; until then it's missing which is fine.
+
+# Repo-root node_modules / package.json (created transiently by playwright install for screenshot capture)
+/node_modules/
+/package.json
+/package-lock.json
+
+# Local preview-server logs from screenshot capture script
+app/preview.*.txt

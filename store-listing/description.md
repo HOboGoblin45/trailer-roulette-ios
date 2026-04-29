@@ -37,7 +37,7 @@ WHAT YOU GET
 
 ABOUT TRAILERS
 
-Trailer Roulette plays trailers via YouTube's official embedded player inside Apple's secure in-app browser. We don't host or modify trailers — we curate the feed and learn what you love.
+Trailer Roulette plays trailers via YouTube's official embedded player. We don't host, copy, or modify trailers — we curate the feed and learn what you love.
 
 Movie metadata from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
 

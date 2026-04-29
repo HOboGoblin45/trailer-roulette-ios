@@ -1,66 +1,64 @@
-# Screenshot specs — App Store Connect required sizes
+# App Store Screenshots
 
-Apple requires screenshots in specific pixel sizes. Use the simulator with the matching device, capture via `scripts/screenshot.sh`, and verify the resolution before upload.
+Captured by `scripts/capture-screenshots.mjs` against a local Vite preview of
+the React build, at exact iPhone pixel dimensions. Apple validates dimensions,
+not provenance — these are accepted directly in App Store Connect. Charlie
+can swap in real iPhone screenshots later if he wants (same filenames, same
+dimensions, drop-in replacement).
 
-## Required sizes (v1)
+## Sizes
 
-| Display | Device | Pixel size | Folder |
-|---------|--------|-----------|--------|
-| 6.7-inch | iPhone 15 Pro Max | 1290 × 2796 | `6.7-inch/` |
-| 6.5-inch | iPhone 11 Pro Max | 1242 × 2688 | `6.5-inch/` |
-| 5.5-inch | iPhone 8 Plus | 1242 × 2208 | `5.5-inch/` (Apple still requires this) |
-| 12.9-inch iPad Pro | iPad Pro 12.9" (6th gen) | 2048 × 2732 | `ipad/` (only if supporting iPad) |
+| Folder | Pixels (W × H) | Device class | Required? |
+|---|---|---|---|
+| `6.9-inch/` | 1320 × 2868 | iPhone 16 Pro Max | **Required** (Apple's current default) |
+| `6.7-inch/` | 1290 × 2796 | iPhone 15/14 Pro Max | Auto-derived from 6.9" if omitted |
+| `6.5-inch/` | 1242 × 2688 | iPhone XS Max | Optional |
+| `5.5-inch/` | 1242 × 2208 | iPhone 8 Plus | Optional (legacy) |
 
-Minimum 5 screenshots per size, max 10. Same five screens across all sizes.
+Apple's policy as of 2025: only the 6.9-inch set is strictly required —
+older sizes are auto-scaled from it. We supply all four anyway because (a)
+the older device classes still exist in the wild and (b) our ASO traction
+analysis will be cleaner if the legacy phones see screenshots that fit
+without rescaling artifacts.
 
-## The 5 hero screens (in order)
+## Frames
 
-1. **Shuffle / player** — current trailer playing, swipe indicators visible (mid-drag pose), heart + cast + shuffle controls visible
-2. **Watchlist** — 6 saved items in the grid; show variety (different genres/eras)
-3. **Filters in action** — Action genre + 2010s decade chips both lit; queue narrowed
-4. **Up Next bottom sheet expanded** — five upcoming trailers visible
-5. **About** — TMDB attribution and privacy posture visible
+| Frame | Caption (use as Apple-ASC overlay text) |
+|---|---|
+| `01-shuffle.png` | Shuffle through trailers like channels |
+| `02-up-next.png` | See what's coming up next |
+| `03-filters.png` | Filter by genre and decade |
+| `04-watchlist.png` | Save what you love to your Watchlist |
+| `05-about.png` | No accounts. No tracking. Your data stays yours. |
 
-## Captioning (do this in Figma or any design tool)
+App Store Connect lets you add caption text in a separate panel that overlays
+each screenshot at upload time — don't bake captions into the PNGs themselves
+or they're harder to localize later.
 
-Each screenshot should have a short caption above the device frame. Suggested copy:
+## Regenerate
 
-| # | Caption (short, ≤6 words) |
-|---|---------------------------|
-| 1 | Shuffle through trailers like channels |
-| 2 | Save anything for later |
-| 3 | Filter by genre or decade |
-| 4 | See what's up next |
-| 5 | No accounts. No tracking. |
+Whenever the player UI changes, captions become stale, or a new frame is
+added to the script:
 
-Use the dark navy palette for caption backgrounds (#0E1726) with gold (#D4AF37) for accent words. Match the in-app aesthetic — App Store visitors should feel the brand before they install.
+```powershell
+# 1. Build the app and start a preview server
+cd app
+npm run build
+npx vite preview --port 4173 --host 127.0.0.1
 
-## File naming convention
+# 2. From repo root in another shell
+node scripts/capture-screenshots.mjs --url=http://127.0.0.1:4173/
 
-`NN-screen-name.png` — sortable, two-digit prefix.
-
-```
-6.7-inch/
-  01-shuffle.png
-  02-watchlist.png
-  03-filters.png
-  04-upnext.png
-  05-about.png
-```
-
-## App Preview video (optional but recommended)
-
-15–30s screen recording. Record with:
-```bash
-xcrun simctl io booted recordVideo --type=mp4 ~/Desktop/trailer-roulette-preview.mp4
-# stop with Ctrl+C
+# 3. Stop the preview server
 ```
 
-Then trim with ffmpeg:
-```bash
-ffmpeg -i input.mp4 -ss 00:00:00 -to 00:00:25 -c copy output.mp4
-```
+## Real-iPhone replacements (optional)
 
-Hero shots in order: cold launch → shuffle → swipe right → save to watchlist → filters → cycle advance.
+To swap in real iPhone screenshots:
 
-Add background music license-cleared for commercial use (Epidemic Sound, Artlist, or royalty-free).
+1. On the device, take screenshots normally (Side + Volume Up)
+2. AirDrop to a Mac, or Files → "Save to Files" → sync via iCloud
+3. Confirm dimensions match the table above (iPhone screenshots come out at
+   the right size natively for that device's class)
+4. Drop the PNGs into the matching folder, keeping the `01-`/`02-`/etc.
+   naming so submission tooling continues to work
