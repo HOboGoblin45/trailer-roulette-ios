@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.author = { 'Charlie Cresci' => 'crescicharles@gmail.com' }
   s.source = { git: 'https://github.com/cresci/trailer-roulette-ios.git', tag: s.version.to_s }
   s.source_files = 'ios/Plugin/**/*.{swift,h,m}'
-  s.ios.deployment_target = '13.0'
+  s.ios.deployment_target = '14.0'
   s.dependency 'Capacitor'
   s.swift_version = '5.9'
 end

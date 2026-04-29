@@ -1,7 +1,7 @@
 {
   "name": "trailer-roulette",
   "private": true,
-  "version": "1.9.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "Shuffle through movie trailers like a TV channel.",
   "scripts": {
@@ -19,12 +19,12 @@
     "icons:generate": "npx capacitor-assets generate --ios"
   },
   "dependencies": {
-    "@capacitor/app": "^6.0.0",
-    "@capacitor/core": "^6.0.0",
-    "@capacitor/dialog": "^6.0.0",
-    "@capacitor/haptics": "^6.0.0",
-    "@capacitor/ios": "^6.0.0",
-    "@capacitor/preferences": "^6.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/dialog": "^7.0.0",
+    "@capacitor/haptics": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@capacitor/preferences": "^7.0.0",
     "airplay-plugin": "file:./local-plugins/airplay-plugin",
     "trailer-player": "file:./local-plugins/trailer-player",
     "react": "^18.3.1",
@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^6.0.0",
+    "@capacitor/cli": "^7.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
@@ -45,9 +45,3 @@
     "vitest": "^2.1.4"
   }
 }
-
-
-
-
-
-
