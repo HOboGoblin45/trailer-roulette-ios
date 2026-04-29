@@ -14,7 +14,20 @@ const config: CapacitorConfig = {
     handleApplicationNotifications: false,
   },
   server: {
-    iosScheme: 'app.trailerroulette',
+    // 'https' tells WKWebView to serve the bundled web app from
+    // `https://localhost` instead of a custom scheme. YouTube embeds
+    // validate the parent-page origin during their load handshake and
+    // reject non-http(s) schemes with error 153. We hit that on
+    // 'app.trailerroulette://localhost' through v1.3.1; switching to
+    // 'https' makes the embed see a normal-looking parent and accept it.
+    //
+    // Side effect: localStorage keyed by the old scheme is invisible to
+    // the new scheme. Existing TestFlight users get a fresh watchlist on
+    // first launch after this update — acceptable for a pre-release tester
+    // group, and Capacitor Preferences (which the app uses for the real
+    // persistence) is unaffected because it stores in NSUserDefaults keyed
+    // by bundle id, not by web origin.
+    iosScheme: 'https',
   },
   plugins: {
     // Note: @capacitor/browser was removed in v1.2.0 — trailers now play
