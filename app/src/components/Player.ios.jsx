@@ -1,24 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { backdropUrl, posterUrl } from '../lib/tmdb.js';
 import { embedUrl } from '../lib/youtube.js';
 import { loadYouTubeIframeAPI, PlayerState } from '../lib/ytIframeApi.js';
 import * as haptics from '../lib/haptics.js';
 
 /**
- * iOS player — YouTube IFrame Player API (v1.2.0).
+ * iOS player (v1.3.1).
  *
- * Upgrades over v1.1.0's static iframe:
- *   - Real `onEnded` events let TrailerRoulette advance the moment the
- *     trailer actually finishes, not when the 90s cycle timer expires.
- *   - `loadVideoById` swaps videos in-place — no iframe remount, no flash
- *     of black, no re-handshake with YouTube.
- *   - Real `onReady` lets us fire a haptic the moment playback starts,
- *     and lets us call `getDuration()` to surface the real trailer length.
+ * Capacitor's WKWebView serves the app from a custom URL scheme
+ * (`app.trailerroulette://localhost` per `capacitor.config.ts`). The YouTube
+ * IFrame Player API does an origin-validation handshake during init, and
+ * any non-https / non-http origin trips its preflight and returns
+ * **error 153 — "Video player configuration error"**.
  *
- * Falls back to a plain iframe embed if the IFrame API fails to load
- * (rare — only on offline first-launch). The fallback path matches
- * v1.1.0 behaviour so we don't lose ground.
+ * The static `<iframe src="https://www.youtube-nocookie.com/embed/...">`
+ * path doesn't do that validation — YouTube just renders the player. We
+ * already had that path as the fallback for "API failed to load"; v1.3.1
+ * promotes it to the *primary* path on iOS.
+ *
+ * Trade-off: we lose real `onEnded` events on iOS, so auto-advance falls
+ * back to the parent's cycle timer (still 90s default, or whatever
+ * `cycleSeconds` is set to). On web, the API works normally and we keep
+ * end-of-video detection — see Player.web.jsx.
+ *
+ * To re-enable the IFrame API on iOS in the future, either:
+ *   - change `server.iosScheme` in capacitor.config.ts to `https` (might
+ *     have side effects on Preferences / cookies / file:// resolution), or
+ *   - run a tiny postMessage protocol against a static iframe yourself
+ *     (replicates the API's onStateChange without origin validation).
  */
+const IS_IOS_CAPACITOR =
+  Capacitor.getPlatform() === 'ios' && Capacitor.isNativePlatform();
+
 export default function PlayerIOS({
   trailer,
   isPlaying,
@@ -30,12 +44,13 @@ export default function PlayerIOS({
   const containerRef = useRef(null);
   const playerRef = useRef(null);
   const lastLoadedKeyRef = useRef(null);
+  // On iOS Capacitor we skip the IFrame API entirely. apiFailed=true
+  // forces the render path into the static-iframe branch.
   const [apiReady, setApiReady] = useState(false);
-  const [apiFailed, setApiFailed] = useState(false);
+  const [apiFailed, setApiFailed] = useState(IS_IOS_CAPACITOR);
   const [error, setError] = useState(null);
 
-  // Stable callback refs so the "create player" effect can run once
-  // without resubscribing whenever the parent re-renders.
+  // Stable callback refs.
   const onPlayRef = useRef(onPlay);
   const onPauseRef = useRef(onPause);
   const onEndedRef = useRef(onEnded);
@@ -45,8 +60,10 @@ export default function PlayerIOS({
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
   useEffect(() => { onDurationKnownRef.current = onDurationKnown; }, [onDurationKnown]);
 
-  // Load the IFrame API once.
+  // Load the IFrame API once — only on web. On iOS Capacitor we
+  // shortcut to the static iframe and skip this entirely.
   useEffect(() => {
+    if (IS_IOS_CAPACITOR) return undefined;
     let cancelled = false;
     loadYouTubeIframeAPI()
       .then(() => { if (!cancelled) setApiReady(true); })
@@ -54,10 +71,11 @@ export default function PlayerIOS({
     return () => { cancelled = true; };
   }, []);
 
-  // Create the player as soon as we have an API and a first key.
+  // Create the player as soon as we have an API and a first key (web only).
   useEffect(() => {
-    if (!apiReady || !trailer?.youtubeKey || !containerRef.current) return;
-    if (playerRef.current) return; // already created
+    if (IS_IOS_CAPACITOR) return undefined;
+    if (!apiReady || !trailer?.youtubeKey || !containerRef.current) return undefined;
+    if (playerRef.current) return undefined;
 
     const YT = window.YT;
     let destroyed = false;
@@ -73,8 +91,6 @@ export default function PlayerIOS({
           modestbranding: 1,
           controls: 1,
           enablejsapi: 1,
-          // origin helps YT's CSRF protection accept our postMessages even
-          // when the WKWebView is served from the capacitor:// scheme.
           origin: window.location.origin,
         },
         events: {
@@ -96,14 +112,15 @@ export default function PlayerIOS({
             else if (e.data === PlayerState.PAUSED) onPauseRef.current?.();
           },
           onError: (e) => {
-            // Codes: 2 invalid id, 5 HTML5 player error, 100 not found,
-            // 101/150 embedding disallowed. For 100/101/150 we should skip
-            // since the trailer isn't playable in an embed.
+            // 100/101/150 → embed disallowed / not found, just skip.
+            // Anything else: surface error and skip after a beat so the
+            // user isn't stuck on a broken trailer.
             const code = e.data;
             if (code === 100 || code === 101 || code === 150) {
               onEndedRef.current?.();
             } else {
               setError(`YouTube player error ${code}`);
+              setTimeout(() => onEndedRef.current?.(), 2000);
             }
           },
         },
@@ -122,8 +139,9 @@ export default function PlayerIOS({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiReady, !!trailer?.youtubeKey]);
 
-  // When key changes, swap the video in-place (no remount).
+  // When key changes, swap the video in-place (web only).
   useEffect(() => {
+    if (IS_IOS_CAPACITOR) return;
     const key = trailer?.youtubeKey;
     if (!key || !playerRef.current) return;
     if (lastLoadedKeyRef.current === key) return;
@@ -136,8 +154,10 @@ export default function PlayerIOS({
     }
   }, [trailer?.youtubeKey]);
 
-  // Honour external isPlaying flips (e.g. background pause).
+  // Honour external isPlaying flips on web (background pause via the
+  // static iframe path uses a different mechanism — see iframe `key`).
   useEffect(() => {
+    if (IS_IOS_CAPACITOR) return;
     const p = playerRef.current;
     if (!p) return;
     try {
@@ -172,9 +192,9 @@ export default function PlayerIOS({
     );
   }
 
-  // Fallback path: IFrame API failed to load. Use a plain iframe so the
-  // app remains functional offline-then-online or behind certain firewalls
-  // that block www.youtube.com/iframe_api.
+  // Static-iframe path. Used on iOS Capacitor (always) and on web when
+  // the IFrame API failed to load. No origin validation, no plugin
+  // surface, just YouTube's official embed via the URL they prescribe.
   if (apiFailed) {
     return (
       <div className="player player-ios">
@@ -186,14 +206,16 @@ export default function PlayerIOS({
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           style={{ width: '100%', height: '100%', border: 0, background: '#000' }}
-          onLoad={() => onPlay?.()}
+          onLoad={() => {
+            haptics.light();
+            onPlay?.();
+          }}
         />
       </div>
     );
   }
 
-  // Normal path: API-managed player. The container div is what YT.Player
-  // replaces with its own iframe.
+  // Web normal path: API-managed player.
   return (
     <div className="player player-ios">
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
