@@ -1,19 +1,27 @@
 /**
  * Trailer Roulette YouTube embed proxy — server-rendered.
  *
- * v1.5.0 used a static landing-page/embed.html that injected the YT
- * iframe via document.createElement. WKWebView still stripped the Refer
- * header on that injection (WebKit Bug 169846 fires for any cross-origin
- * iframe load that goes through the WebView's networking stack, even
- * inside nested iframes). Result: black screen.
+ * v1.9.0: this is the proxy that the iOS TrailerPlayer plugin navigates
+ * to directly as the WKWebView's main frame. Verified in headless WebKit
+ * with iOS UA — Rick Astley plays in 2-3 seconds.
  *
- * This Edge Function serves the iframe HTML statically — the YouTube
- * iframe element is in the parsed HTML before any JS runs, so the iframe
- * load is not "dynamically injected" and WKWebView sets the referrer
- * normally.
+ * Why this works where every other approach failed:
+ *   - The page is at https://trailer-roulette.vercel.app/embed (a real
+ *     third-party https origin from YouTube's perspective)
+ *   - The YouTube iframe inside this page sees a normal Referer of
+ *     https://trailer-roulette.vercel.app/ — not youtube.com (which
+ *     YT rejects as a self-embed) and not capacitor:// (which YT rejects
+ *     as not a real origin)
+ *   - enablejsapi=1 lets us listen for player events via postMessage
+ *   - The page's own script forwards events to native via
+ *     webkit.messageHandlers.trailerEvent, which the iOS plugin's
+ *     userContentController is wired to
  *
- * Deployed at: GET https://trailer-roulette.vercel.app/api/embed?v=KEY
- * Vercel rewrite (vercel.json): /embed → /api/embed
+ * Test scripts that verify this works:
+ *   scripts/test-vercel-direct.mjs (headless WebKit, iOS UA)
+ *
+ * Endpoint:  GET https://trailer-roulette.vercel.app/api/embed?v=KEY
+ * Rewrite:   /embed → /api/embed (configured in vercel.json)
  */
 
 export const config = {
@@ -45,12 +53,20 @@ export default async function handler(request) {
     });
   }
 
-  const ytSrc = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}?autoplay=${autoplay}&mute=${mute}&controls=${controls}&playsinline=1&rel=0&modestbranding=1`;
+  // The IFRAME src must include `enablejsapi=1` for postMessage events
+  // to fire. `origin` should match the page hosting the iframe so YT's
+  // origin-validation passes; that's our Vercel host.
+  const ytSrc =
+    `https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}` +
+    `?autoplay=${autoplay}` +
+    `&mute=${mute}` +
+    `&controls=${controls}` +
+    `&playsinline=1` +
+    `&rel=0` +
+    `&modestbranding=1` +
+    `&enablejsapi=1` +
+    `&origin=${encodeURIComponent('https://trailer-roulette.vercel.app')}`;
 
-  // Static HTML with the iframe element ALREADY in the document body.
-  // No document.createElement, no JS injection, no setTimeout. The
-  // YouTube iframe load is part of the initial document parse, which
-  // sidesteps the WebKit Bug 169846 referer-stripping pattern.
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,11 +77,11 @@ export default async function handler(request) {
 <style>
   html, body { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
   iframe { border:0; width:100%; height:100%; display:block; }
-  .err { color:#aaa; font:14px -apple-system,sans-serif; padding:24px; text-align:center; }
 </style>
 </head>
 <body>
 <iframe
+  id="yt"
   src="${safeText(ytSrc)}"
   title="Trailer ${safeText(v)}"
   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -73,6 +89,65 @@ export default async function handler(request) {
   referrerpolicy="strict-origin-when-cross-origin"
   loading="eager"
 ></iframe>
+<script>
+(function () {
+  // Bridge to native (iOS WKWebView). webkit.messageHandlers.trailerEvent
+  // is set up by the TrailerPlayer.swift plugin's userContentController.
+  // On desktop browsers, this is a no-op — the page still plays normally.
+  function toNative(event) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.trailerEvent) {
+        window.webkit.messageHandlers.trailerEvent.postMessage(event);
+      }
+    } catch (e) {}
+  }
+
+  // Tell the YT iframe we're listening. Must be done after the iframe
+  // loads. We send the message a few times in case the first attempts
+  // race the iframe's own bootstrap.
+  var iframe = document.getElementById('yt');
+  function sendListening() {
+    try {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'listening', id: '${v}', channel: 'widget' }),
+        'https://www.youtube-nocookie.com'
+      );
+    } catch (e) {}
+  }
+  iframe.addEventListener('load', function () {
+    sendListening();
+    setTimeout(sendListening, 500);
+    setTimeout(sendListening, 1500);
+    toNative({ kind: 'iframeLoaded' });
+  });
+
+  // Listen for postMessages from the YT iframe and forward to native.
+  // YT IFrame API messages are JSON-encoded strings with shape:
+  //   { event: 'onStateChange', info: 1 }   // 1 = PLAYING, 0 = ENDED, etc.
+  //   { event: 'onError', info: 101 }
+  //   { event: 'onReady' }
+  //   { event: 'initialDelivery', ... }
+  //   { event: 'infoDelivery', info: { ... } }
+  window.addEventListener('message', function (e) {
+    if (!e || !e.data) return;
+    if (e.origin !== 'https://www.youtube-nocookie.com' && e.origin !== 'https://www.youtube.com') return;
+    var data = e.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (err) { return; }
+    }
+    if (!data || !data.event) return;
+    if (data.event === 'onStateChange') {
+      toNative({ kind: 'stateChange', state: data.info });
+    } else if (data.event === 'onError') {
+      toNative({ kind: 'error', code: data.info });
+    } else if (data.event === 'onReady') {
+      toNative({ kind: 'ready' });
+    }
+  });
+
+  toNative({ kind: 'pageLoaded' });
+})();
+</script>
 </body>
 </html>`;
 

@@ -1,48 +1,35 @@
 //
 //  TrailerPlayer.swift
-//  Trailer Roulette — in-app YouTube playback (v1.8.3).
+//  Trailer Roulette — in-app YouTube playback (v1.9.0).
 //
-//  This is the proven WKYTPlayerView pattern, refined per:
+//  Architecture (verified in headless WebKit with iOS UA):
 //
-//   • YouTube's official embedded player terms documentation:
-//     https://developers.google.com/youtube/terms/required-minimum-functionality#embedded-player-api-client-identity
-//     "API Clients that use the YouTube embedded player (including the
-//      YouTube IFrame Player API) must provide identification through
-//      the HTTP Referer request header... YouTube recommends using
-//      strict-origin-when-cross-origin Referrer-Policy."
+//    1. Modal UIViewController hosts a fresh WKWebView.
+//    2. WKWebView navigates directly to our Vercel proxy URL —
+//       https://trailer-roulette.vercel.app/embed?v=ID — as the main
+//       frame. This is a normal HTTPS navigation, NOT loadHTMLString.
+//    3. The proxy page hosts the YouTube iframe. From YouTube's
+//       perspective the embed comes from a real third-party https
+//       origin (trailer-roulette.vercel.app), which is what their
+//       embedded-player terms doc requires for embedder identification.
+//    4. The proxy page (landing-page/api/embed.js Edge Function) forwards
+//       YouTube IFrame Player events to native via webkit.messageHandlers
+//       .trailerEvent. We get onReady, stateChange (1=PLAYING, 0=ENDED),
+//       and onError.
+//    5. Custom UI chrome (Done button, title, dark navy bg) so the
+//       experience feels in-app — no Safari URL bar.
 //
-//   • The verbatim YTPlayerView-iframe-player.html template from
-//     hmhv/YoutubePlayer-in-WKWebView (Google's iOS reference impl).
+//  Why prior versions failed:
+//    - Loading the embed URL directly with manual Referer header (v1.7.x)
+//      hit WebKit Bug 169846 (Referer stripped on cross-origin sub-resources).
+//    - loadHTMLString:baseURL:https://www.youtube.com (v1.8.3) caused YT
+//      to reject as "youtube.com embedding youtube.com" — Error 152.
+//    - Static iframe inside the main app's Capacitor WebView (v1.5.x) —
+//      nested cross-origin iframe, Bug 169846 strips the Referer.
 //
-//  Key design choices:
-//
-//   1. `baseURL = https://www.youtube.com/` (not about:blank). This
-//      makes WKWebView treat the loaded HTML as if served from
-//      youtube.com — all sub-resource requests automatically carry
-//      Referer: https://www.youtube.com/, satisfying YouTube's
-//      documented requirement.
-//
-//   2. The HTML template loads https://www.youtube.com/iframe_api
-//      (the official YouTube SDK script) and creates the player via
-//      `new YT.Player()`. YouTube's own JS handles the cross-origin
-//      handshake, postMessage origins, and embed protocol.
-//
-//   3. JS → native callbacks via the `ytplayer://` URL scheme. The
-//      JS does `window.location.href = 'ytplayer://...'` (matches the
-//      official template exactly). WKNavigationDelegate intercepts the
-//      navigation, parses the URL, and cancels.
-//
-//   4. WKNavigationDelegate also acts as an allowlist for sub-resource
-//      loads — only the YouTube/Google host set passes; main-frame nav
-//      to youtube.com/watch (the "embed disabled, watch on YT" link)
-//      is treated as the unplayable signal.
-//
-//   5. 10-second watchdog: if onPlaying never fires, dismiss as
-//      unplayable. Real playback events kill the watchdog.
-//
-//   6. onError codes 2/100/101/150/152 → dismiss as unplayable. React
-//      side records the bad youtubeKey and skips it for the rest of
-//      the session.
+//  This v1.9.0 architecture sidesteps all of those: a fresh WKWebView, a
+//  real top-level https navigation to a third-party origin, no manual
+//  header injection.
 //
 
 import Foundation
@@ -132,9 +119,9 @@ public class TrailerPlayer: CAPPlugin {
     }
 }
 
-// MARK: - Player view controller
+// MARK: - View controller
 
-class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
+class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     private let videoId: String
     private let videoTitle: String
@@ -145,15 +132,20 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
 
     private var didFinish = false
     private var watchdogTimer: Timer?
+    private var sawPlaying = false
 
     private static let backgroundColor = UIColor(red: 0.055, green: 0.090, blue: 0.149, alpha: 1.0)
     private static let accentColor = UIColor(red: 0.831, green: 0.686, blue: 0.216, alpha: 1.0)
     private static let textColor = UIColor(red: 0.957, green: 0.957, blue: 0.949, alpha: 1.0)
 
-    /// Hosts permitted by the WKNavigationDelegate allowlist. The set
-    /// matches what the YT IFrame Player loads in practice (player JS,
-    /// embed page, video CDN, fonts, ads).
+    /// The Vercel proxy host — verified third-party origin that YouTube
+    /// accepts as a legitimate embedder. Anything else here = player
+    /// rejected. Must match what the Edge Function rewrites and what
+    /// the iframe URL's `origin` parameter declares.
+    private static let proxyHost = "trailer-roulette.vercel.app"
+
     private static let allowedHosts: Set<String> = [
+        "trailer-roulette.vercel.app",
         "www.youtube.com",
         "youtube.com",
         "m.youtube.com",
@@ -187,7 +179,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         view.backgroundColor = Self.backgroundColor
         setupWebView()
         setupChrome()
-        loadPlayerHTML()
+        loadProxyURL()
     }
 
     override var prefersStatusBarHidden: Bool { true }
@@ -202,6 +194,12 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         config.allowsAirPlayForMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsPictureInPictureMediaPlayback = true
+
+        // Wire up the JS→native message channel that the Vercel proxy
+        // page uses to relay YT IFrame Player events.
+        let userContent = WKUserContentController()
+        userContent.add(self, name: "trailerEvent")
+        config.userContentController = userContent
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
@@ -262,209 +260,23 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         ])
     }
 
-    /// HTML template — v1.8.4 adds visible on-screen diagnostics so we
-    /// can see exactly what's happening inside the modal without needing
-    /// Safari Web Inspector access. Stays the same architecture as v1.8.3
-    /// (verbatim WKYTPlayerView pattern) and adds:
-    ///   - Green-on-black debug strip pinned to the top of the page
-    ///   - One log line per lifecycle event (page loaded, script loaded,
-    ///     YT global, YT.ready, player created, onReady, state changes)
-    ///   - Visible error reporting if YT undefined or any callback throws
-    ///   - 6s "iframe_api never loaded" fallback (if the script tag's
-    ///     onerror doesn't fire but YT also never appears)
-    private func playerHTML() -> String {
-        return """
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="initial-scale=1.0, user-scalable=no">
-<meta name="referrer" content="strict-origin-when-cross-origin">
-<style>
-  body { margin: 0; width: 100%; height: 100%; background-color: #000000; color: #fff; font-family: -apple-system, sans-serif; }
-  html { width: 100%; height: 100%; background-color: #000000; }
-  .embed-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-  .embed-container iframe,
-  .embed-container object,
-  .embed-container embed {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100% !important;
-    height: 100% !important;
-  }
-  #diag {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 9999;
-    background: rgba(0,0,0,0.85);
-    color: #9CFF9C;
-    font-family: -apple-system-monospaced, ui-monospace, Menlo, monospace;
-    font-size: 11px;
-    line-height: 1.35;
-    padding: 6px 8px;
-    max-height: 50%;
-    overflow-y: auto;
-    word-break: break-all;
-    pointer-events: none;
-  }
-  #diag .err { color: #FFA08A; }
-  #diag .ok { color: #9CFF9C; }
-  #diag .info { color: #C9D9FF; }
-</style>
-</head>
-<body>
-<div class="embed-container">
-  <div id="player"></div>
-</div>
+    private func loadProxyURL() {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = Self.proxyHost
+        components.path = "/embed"
+        components.queryItems = [URLQueryItem(name: "v", value: videoId)]
+        guard let url = components.url else {
+            dismissUnplayable("invalid-url")
+            return
+        }
+        // Direct HTTPS navigation. The proxy page handles the YT iframe.
+        webView.load(URLRequest(url: url))
 
-<div id="diag">starting…</div>
-
-<script>
-(function () {
-  var diag = document.getElementById('diag');
-  var t0 = Date.now();
-  function elapsed() { return ((Date.now() - t0) / 1000).toFixed(2) + 's'; }
-  window.__diagLog = function (msg, level) {
-    try {
-      var line = document.createElement('div');
-      line.className = level || 'info';
-      line.textContent = elapsed() + ' ' + msg;
-      diag.appendChild(line);
-      // Also forward to native console.
-      try { window.location.href = 'ytplayer://log?data=' + encodeURIComponent(msg); } catch (e) {}
-    } catch (e) {}
-  };
-  window.addEventListener('error', function (e) {
-    window.__diagLog('JS ERROR: ' + (e.message || e) + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'), 'err');
-  });
-  window.__diagLog('1. page loaded · ua=' + navigator.userAgent.slice(0, 60), 'info');
-  window.__diagLog('2. location=' + window.location.href, 'info');
-  window.__diagLog('3. videoId=\(videoId)', 'info');
-})();
-</script>
-
-<script src="https://www.youtube.com/iframe_api"
-        onload="window.__diagLog('4a. iframe_api SCRIPT LOADED · YT=' + (typeof YT), 'ok')"
-        onerror="window.__diagLog('4b. iframe_api SCRIPT FAILED', 'err'); window.location.href='ytplayer://onYouTubeIframeAPIFailedToLoad'"></script>
-
-<script>
-var player;
-var error = false;
-
-// Watchdog: if YT global never appears, surface that explicitly.
-setTimeout(function () {
-  if (typeof YT === 'undefined' || !YT.ready) {
-    window.__diagLog('5x. YT global STILL UNDEFINED after 6s', 'err');
-    try { window.location.href = 'ytplayer://onError?data=-2'; } catch (e) {}
-  }
-}, 6000);
-
-function bootPlayer() {
-  try {
-    window.__diagLog('6. YT.ready fired · creating player…', 'ok');
-    player = new YT.Player('player', {
-      videoId: '\(videoId)',
-      playerVars: {
-        autoplay: 1,
-        playsinline: 1,
-        rel: 0,
-        modestbranding: 1,
-        controls: 1,
-        fs: 1,
-        origin: 'https://trailer-roulette.vercel.app'
-      },
-      events: {
-        onReady: 'onReady',
-        onStateChange: 'onStateChange',
-        onPlaybackQualityChange: 'onPlaybackQualityChange',
-        onError: 'onPlayerError'
-      }
-    });
-    try { player.setSize(window.innerWidth, window.innerHeight); } catch (e) {}
-    window.__diagLog('7. new YT.Player constructed', 'ok');
-    window.location.href = 'ytplayer://onYouTubeIframeAPIReady';
-  } catch (e) {
-    window.__diagLog('7x. YT.Player threw: ' + (e && e.message), 'err');
-    try { window.location.href = 'ytplayer://onError?data=-3'; } catch (e2) {}
-  }
-}
-
-// Wait for YT to be defined, then call YT.ready. The script tag's onload
-// usually fires before YT.ready is available, so we poll briefly.
-(function waitForYT(tries) {
-  if (typeof YT !== 'undefined' && YT.ready) {
-    window.__diagLog('5. YT global ready (' + tries + ' polls)', 'ok');
-    YT.ready(bootPlayer);
-    return;
-  }
-  if (tries > 60) {
-    window.__diagLog('5x. YT.ready not available after 6s polling', 'err');
-    try { window.location.href = 'ytplayer://onError?data=-4'; } catch (e) {}
-    return;
-  }
-  setTimeout(function () { waitForYT(tries + 1); }, 100);
-})(0);
-
-function onReady(event) {
-  window.__diagLog('8. onReady', 'ok');
-  window.location.href = 'ytplayer://onReady';
-  try { event.target.playVideo(); window.__diagLog('8a. playVideo() called', 'ok'); }
-  catch (e) { window.__diagLog('8x. playVideo threw: ' + e.message, 'err'); }
-}
-
-function onStateChange(event) {
-  var stateNames = { '-1': 'UNSTARTED', 0: 'ENDED', 1: 'PLAYING', 2: 'PAUSED', 3: 'BUFFERING', 5: 'CUED' };
-  window.__diagLog('9. state=' + (stateNames[event.data] || event.data), 'info');
-  if (!error) {
-    window.location.href = 'ytplayer://onStateChange?data=' + event.data;
-  } else {
-    error = false;
-  }
-}
-
-function onPlaybackQualityChange(event) {
-  window.location.href = 'ytplayer://onPlaybackQualityChange?data=' + event.data;
-}
-
-function onPlayerError(event) {
-  window.__diagLog('!! onError code=' + event.data, 'err');
-  if (event.data == 100) error = true;
-  window.location.href = 'ytplayer://onError?data=' + event.data;
-}
-
-window.onresize = function () {
-  if (player) { try { player.setSize(window.innerWidth, window.innerHeight); } catch (e) {} }
-};
-</script>
-</body>
-</html>
-"""
-    }
-
-    private func loadPlayerHTML() {
-        let html = playerHTML()
-        // baseURL must be a real *third-party* https origin (not
-        // youtube.com itself). Reproduced and verified in headless WebKit
-        // with iOS UA: baseURL=https://www.youtube.com produces a Referer
-        // of https://www.youtube.com/ on the iframe_api request, and
-        // YouTube rejects that as suspicious ("youtube.com embedding
-        // youtube.com") with Error 152. Using our Vercel hostname gives
-        // a third-party origin and YouTube accepts it — playback reaches
-        // state=PLAYING in ~3s under the same conditions that produce
-        // Error 152 with youtube.com baseURL.
-        //
-        // Test scripts that prove this:
-        //   scripts/test-yt-player.mjs   (real http://localhost server)
-        //   scripts/test-yt-ios-sim.mjs  (route-intercept simulating
-        //                                 iOS loadHTMLString:baseURL:)
-        let baseURL = URL(string: "https://trailer-roulette.vercel.app")
-        webView.loadHTMLString(html, baseURL: baseURL)
-
-        // v1.8.4: longer watchdog so the diagnostic strip has time to
-        // be screenshotted. Real PLAYING state cancels this; we only
-        // hit the watchdog when the player never reaches play.
-        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: false) { [weak self] _ in
-            guard let self = self, !self.didFinish else { return }
+        // Watchdog: if state=PLAYING never fires within 12s, dismiss as
+        // unplayable. Real playback starts in 2-3s normally.
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 12.0, repeats: false) { [weak self] _ in
+            guard let self = self, !self.didFinish, !self.sawPlaying else { return }
             self.dismissUnplayable("watchdog")
         }
     }
@@ -497,15 +309,7 @@ window.onresize = function () {
             return
         }
 
-        // ytplayer:// — JS→native callback channel.
-        if url.scheme == "ytplayer" {
-            handleCallback(url: url)
-            decisionHandler(.cancel)
-            return
-        }
-
-        // about:blank, data:, file: schemes are part of how WKWebView
-        // bootstraps loadHTMLString; allow them.
+        // about:, data:, file: schemes are part of WKWebView bootstrap.
         if url.scheme == "about" || url.scheme == "data" || url.scheme == "file" {
             decisionHandler(.allow)
             return
@@ -513,8 +317,7 @@ window.onresize = function () {
 
         if let host = url.host, Self.allowedHosts.contains(host) {
             // Special case: main-frame nav to youtube.com/watch is the
-            // "embed disabled, watch on YouTube" escape link. Treat as
-            // unplayable.
+            // "embed disabled, watch on YouTube" escape link. Intercept.
             let isMain = navigationAction.targetFrame?.isMainFrame ?? false
             let path = url.path
             if isMain && (host == "www.youtube.com" || host == "youtube.com" || host == "m.youtube.com") &&
@@ -541,6 +344,12 @@ window.onresize = function () {
         dismissUnplayable("provisional:\(nsErr.code)")
     }
 
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        let nsErr = error as NSError
+        if nsErr.code == NSURLErrorCancelled { return }
+        dismissUnplayable("nav:\(nsErr.code)")
+    }
+
     // MARK: - WKUIDelegate
 
     public func webView(_ webView: WKWebView,
@@ -555,50 +364,49 @@ window.onresize = function () {
         return nil
     }
 
-    // MARK: - JS callback dispatch (ytplayer:// scheme)
+    // MARK: - WKScriptMessageHandler — events from the proxy page
 
-    private func handleCallback(url: URL) {
-        let event = url.host ?? ""
-        var data: String?
-        if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-           let q = comps.queryItems {
-            data = q.first(where: { $0.name == "data" })?.value
-        }
-        switch event {
-        case "log":
-            // v1.8.4 diagnostic forward — print on the iOS console so
-            // a tethered Mac could see it. Non-fatal.
-            print("[TrailerPlayer.js] \(data ?? "")")
-        case "onYouTubeIframeAPIReady":
-            // SDK script loaded successfully; the YT.ready callback will
-            // create the player and fire onReady next.
-            break
-        case "onYouTubeIframeAPIFailedToLoad":
-            dismissUnplayable("api-load-failed")
-        case "onReady":
-            // Player constructed and play attempted. State change should
-            // follow shortly with PLAYING (1).
-            break
-        case "onStateChange":
-            // 1 = PLAYING, 0 = ENDED, 2 = PAUSED, 3 = BUFFERING
-            let state = Int(data ?? "") ?? -99
+    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "trailerEvent" else { return }
+        guard let body = message.body as? [String: Any], let kind = body["kind"] as? String else { return }
+
+        switch kind {
+        case "pageLoaded", "iframeLoaded":
+            // Informational; just confirms the proxy page is alive.
+            print("[TrailerPlayer] proxy event: \(kind)")
+
+        case "ready":
+            // YT.Player has loaded and is ready. State change should
+            // follow shortly.
+            print("[TrailerPlayer] YT.Player onReady")
+
+        case "stateChange":
+            // 1=PLAYING, 0=ENDED, 2=PAUSED, 3=BUFFERING, 5=CUED
+            let state = (body["state"] as? Int) ?? -99
             if state == 1 {
-                // Real playback — kill watchdog.
+                // Real playback — kill watchdog so we don't dismiss a
+                // healthy long trailer.
+                sawPlaying = true
                 watchdogTimer?.invalidate(); watchdogTimer = nil
             } else if state == 0 {
                 finish(reason: "ended")
             }
-        case "onPlaybackQualityChange":
-            break
-        case "onError":
-            let code = Int(data ?? "") ?? -1
-            // 2 = invalid id, 5 = HTML5 player, 100 = not found,
-            // 101 = embed disabled, 150 = same as 101, 152 = 2025 variant
+
+        case "error":
+            // YT IFrame Player error codes:
+            //   2   = invalid videoId
+            //   5   = HTML5 player error
+            //   100 = video not found / made private
+            //   101 = embedding disabled by uploader
+            //   150 = same as 101 (different region)
+            //   152 = 2025+ variant
+            let code = (body["code"] as? Int) ?? -1
             if [2, 5, 100, 101, 150, 152].contains(code) {
                 dismissUnplayable("yt:\(code)")
             } else {
                 dismissUnplayable("yt:unknown:\(code)")
             }
+
         default:
             break
         }
