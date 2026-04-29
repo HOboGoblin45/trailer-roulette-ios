@@ -5,10 +5,13 @@ Apple's keyword field is one comma-separated string, no spaces around commas, ma
 ## Final string (paste this into App Store Connect)
 
 ```
-trailers,shuffle,discover,watchlist,movie picker,roulette,date night,cinephile
+trailers,classic,vintage,80s,90s,cinephile,watchlist,movie picker,date night
 ```
 
-**Character count: 78 / 100.** Twenty-two characters of headroom for ASO tuning post-launch.
+**Character count: 76 / 100.** Twenty-four characters of headroom. The
+classic/vintage/80s/90s tokens lean into the new pre-2010 positioning;
+"shuffle" / "discover" / "roulette" come back via Apple's auto-indexing
+of the app name and subtitle.
 
 ## Why these and not others
 

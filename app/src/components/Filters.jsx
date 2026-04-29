@@ -1,9 +1,8 @@
 /**
- * Filters — genre + decade selectors. Horizontal-scroll on mobile for narrow
- * screens; wraps on desktop.
- *
- * Genre IDs come from TMDB's standard list; we hard-code the popular ones to
- * avoid an extra API call at boot.
+ * Filters — era + genre + decade selectors. Trailer Roulette's default
+ * catalog is pre-2010 cinema; users can flip to "Modern" if they want
+ * the current Hollywood window. Decade chips below the era toggle are
+ * scoped to the active era so the user always sees a coherent set.
  */
 import * as haptics from '../lib/haptics.js';
 
@@ -28,9 +27,14 @@ const GENRES = [
   { id: 37, label: 'Western' },
 ];
 
-const DECADES = ['1970', '1980', '1990', '2000', '2010', '2020'];
+// Pre-2010 leads, in chronological order. Modern era surfaces 2010s/2020s.
+const CLASSIC_DECADES = ['1970', '1980', '1990', '2000'];
+const MODERN_DECADES = ['2010', '2020'];
 
 export default function Filters({ value, onChange }) {
+  const era = value.era === 'modern' ? 'modern' : 'classic';
+  const decades = era === 'classic' ? CLASSIC_DECADES : MODERN_DECADES;
+
   const setGenre = (id) => {
     haptics.selection();
     onChange({ ...value, genre: value.genre === id ? null : id });
@@ -39,13 +43,40 @@ export default function Filters({ value, onChange }) {
     haptics.selection();
     onChange({ ...value, decade: value.decade === decade ? null : decade });
   };
+  const setEra = (nextEra) => {
+    if (era === nextEra) return;
+    haptics.medium();
+    // Swapping era invalidates the decade pick (modern decades aren't valid
+    // in classic era and vice versa). Keep genre.
+    onChange({ ...value, era: nextEra, decade: null });
+  };
   const clear = () => {
     haptics.light();
-    onChange({ genre: null, decade: null });
+    onChange({ ...value, genre: null, decade: null });
   };
 
   return (
     <div className="filters">
+      {/* Era toggle — segmented control, iOS-style */}
+      <div className="era-toggle" role="tablist" aria-label="Era">
+        <button
+          className={`era-segment ${era === 'classic' ? 'active' : ''}`}
+          onClick={() => setEra('classic')}
+          role="tab"
+          aria-selected={era === 'classic'}
+        >
+          Classic
+        </button>
+        <button
+          className={`era-segment ${era === 'modern' ? 'active' : ''}`}
+          onClick={() => setEra('modern')}
+          role="tab"
+          aria-selected={era === 'modern'}
+        >
+          Modern
+        </button>
+      </div>
+
       <div className="filters-row" role="tablist" aria-label="Genre filter">
         {GENRES.map((g) => (
           <button
@@ -60,7 +91,7 @@ export default function Filters({ value, onChange }) {
         ))}
       </div>
       <div className="filters-row" role="tablist" aria-label="Decade filter">
-        {DECADES.map((d) => (
+        {decades.map((d) => (
           <button
             key={d}
             className={`chip ${value.decade === d ? 'active' : ''}`}

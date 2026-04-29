@@ -23,7 +23,9 @@ const DEFAULT_CYCLE_SECONDS = 90;
 const PREFETCH_LOOKAHEAD = 2;
 
 export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
-  const [filters, setFilters] = useState({ genre: null, decade: null });
+  // Default era is 'classic' (pre-2010). Persisted in storage so a user's
+  // explicit choice survives across sessions.
+  const [filters, setFilters] = useState({ era: 'classic', genre: null, decade: null });
   const [queue, setQueue] = useState([]);            // upcoming trailers
   const [current, setCurrent] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -59,7 +61,10 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       await saveProfile(storedProfile);
 
       setProfile(storedProfile);
-      if (storedFilters) setFilters(storedFilters);
+      if (storedFilters) {
+        // Migrate older shapes (no era field) to default classic.
+        setFilters({ era: 'classic', ...storedFilters });
+      }
       setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
       await loadQueue(storedFilters || filters, storedProfile);
     }
@@ -72,7 +77,11 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   const loadQueue = useCallback(async (f, p) => {
     try {
       setLoadError(null);
-      const data = await discoverMovies({ genre: f.genre, decade: f.decade });
+      const data = await discoverMovies({
+        genre: f.genre,
+        decade: f.decade,
+        era: f.era || 'classic',
+      });
       const candidates = (data.results || []).map((m) => ({
         id: m.id,
         title: m.title,

@@ -7,7 +7,7 @@
  */
 import { Capacitor } from '@capacitor/core';
 
-const VERSION = '1.0.0';
+const VERSION = '1.8.0';
 
 export default function AboutScreen({ onClose }) {
   const platform = Capacitor.getPlatform();
@@ -22,7 +22,7 @@ export default function AboutScreen({ onClose }) {
 
       <section className="about-section">
         <h2>Trailer Roulette</h2>
-        <p className="tagline">Shuffle through trailers like channels. Save what you love.</p>
+        <p className="tagline">A guided tour of pre-2010 cinema, one trailer at a time.</p>
         <p className="version">v{VERSION} · {platform}</p>
       </section>
 

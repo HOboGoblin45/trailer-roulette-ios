@@ -1,6 +1,8 @@
-# App Store description — v1.0 final
+# App Store description — v1.8 final
 
-Paste this directly into App Store Connect. Order is intentional — the first three lines are above the App Store fold; "trailers" intentionally appears late.
+Paste this directly into App Store Connect. Order is intentional — the first
+three lines are above the App Store fold; the unique pre-2010 positioning is
+the headline.
 
 ---
 
@@ -8,28 +10,30 @@ Paste this directly into App Store Connect. Order is intentional — the first t
 ```
 Trailer Roulette
 ```
-(16 chars. If "Trailer Roulette" is taken, fall back to "Trailer Roulette: Reel" — 22 chars.)
+(16 chars.)
 
 ## Subtitle (≤30 chars)
 ```
-Shuffle. Discover. Save.
+Trailers from another era.
 ```
-(24 chars.)
+(26 chars.)
 
 ## Description (≤4000 chars)
 
 ```
-Trailer Roulette is a movie-discovery slot machine for your iPhone. Spin through hand-picked trailers like channels, save the ones you love, and let the app learn your taste — every swipe sharpens what comes next.
+Trailer Roulette is a guided tour of pre-2010 cinema, one trailer at a time. Spin through movies from the 70s, 80s, 90s and 2000s — the era that built modern Hollywood — save the ones that hit, and let the app learn your taste.
 
 WHAT YOU GET
 
-• Shuffle through trailers like a TV channel. The 90-second cycle keeps things moving — stop when something grabs you.
+• A classic catalog. The default queue draws from pre-2010 movies with broad recognition. Want something newer? Flip the Era toggle and the catalog opens up to the 2010s and 2020s.
+
+• Channel-flipping trailers. Tap Play; the trailer opens in a clean fullscreen player inside the app. When it ends, the next one queues up. Swipe to skip what doesn't grab you.
 
 • Watchlist. Tap the heart on anything to save it for later. Your list, on your device, no account needed.
 
-• Seen it / Skip it. Swipe right on what you loved, left on what you didn't. The app builds a private taste profile right on your phone and biases future shuffles toward what you'll likely love. Nothing leaves the device.
+• Seen it / Skip it swipes. Right for what you loved, left for what you didn't. The app builds a private taste profile right on your phone and biases future shuffles toward what you'll likely love. Nothing leaves the device.
 
-• Filters. Genre + decade chips shape the queue. Build a "Friday night horror" run, a "90s rom-com" run, anything.
+• Filters. Genre + decade chips shape the queue. Build a "Friday night horror," a "70s Western," a "90s rom-com" run.
 
 • AirPlay. Throw it on the TV with one tap.
 
@@ -37,14 +41,14 @@ WHAT YOU GET
 
 ABOUT TRAILERS
 
-Trailer Roulette plays trailers via YouTube's official embedded player. We don't host, copy, or modify trailers — we curate the feed and learn what you love.
+Trailer Roulette plays trailers via YouTube's official embedded player in an in-app modal. We don't host, copy, or modify trailers — we curate the feed and learn what you love.
 
 Movie metadata from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 Questions or feedback: crescicharles@gmail.com
 ```
 
-(~1200 chars used; lots of room for testimonials in v1.1+.)
+(~1450 chars; lots of room for testimonials in v1.x+.)
 
 ## Apple required disclosures footer
 *This product uses the TMDB API but is not endorsed or certified by TMDB.* — already included above; keep the line in any future revisions.

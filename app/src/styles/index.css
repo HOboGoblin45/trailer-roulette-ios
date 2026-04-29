@@ -349,8 +349,38 @@ a { color: var(--gold); text-decoration: none; }
   letter-spacing: -0.01em;
 }
 
-/* ───────── Filters (iOS chip pattern) ───────── */
+/* ───────── Filters (iOS chip pattern + segmented control) ───────── */
 .filters { padding: 12px 0 8px; }
+
+/* Era toggle — iOS-style segmented control */
+.era-toggle {
+  display: flex;
+  margin: 0 16px 10px;
+  padding: 3px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  gap: 2px;
+}
+.era-segment {
+  flex: 1 1 0;
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.era-segment.active {
+  background: var(--bg-3);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+}
+
 .filters-row {
   display: flex;
   gap: 8px;

@@ -17,8 +17,8 @@ import * as haptics from '../lib/haptics.js';
  */
 const CARDS = [
   {
-    title: 'Spin through trailers like channels.',
-    body: 'Tap Play and a trailer starts. When it ends, the next one queues up automatically. Stop when something grabs you.',
+    title: 'A tour of pre-2010 cinema.',
+    body: 'Trailer Roulette spins through trailers from the 70s, 80s, 90s and 2000s — the era that built modern movies. Want something newer? Flip the Era toggle to Modern any time.',
     icon: '⇄',
   },
   {

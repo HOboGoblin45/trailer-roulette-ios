@@ -45,17 +45,35 @@ async function call(path, params = {}) {
   return r.json();
 }
 
-export async function discoverMovies({ genre, decade, page = 1 } = {}) {
+/**
+ * The default catalog window. Trailer Roulette is positioned as a tour of
+ * pre-2010 cinema — fewer YouTube embed restrictions on older studio
+ * uploads, and a sharper editorial position than "what's hot now."
+ *
+ * Users can opt into modern cinema via the Era toggle in Filters; that
+ * sets `era: 'modern'` and we drop the upper bound here.
+ */
+export const DEFAULT_ERA_END = '2009-12-31';
+
+export async function discoverMovies({ genre, decade, era = 'classic', page = 1 } = {}) {
+  // Higher vote_count threshold for the classic era so the queue is
+  // anchored to recognizable films, not deep-cuts. Modern era keeps the
+  // looser threshold because TMDB has full popularity signals on recent
+  // releases.
+  const isClassic = era !== 'modern';
   const params = {
     sort_by: 'popularity.desc',
     page,
     include_adult: false,
-    'vote_count.gte': 100,
+    'vote_count.gte': isClassic ? 250 : 100,
   };
   if (genre) params.with_genres = genre;
   if (decade) {
     params['primary_release_date.gte'] = `${decade}-01-01`;
     params['primary_release_date.lte'] = `${Number(decade) + 9}-12-31`;
+  } else if (isClassic) {
+    // Classic era default: anything released up to and including 2009.
+    params['primary_release_date.lte'] = DEFAULT_ERA_END;
   }
   return call('/discover/movie', params);
 }
