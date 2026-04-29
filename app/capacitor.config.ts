@@ -30,10 +30,16 @@ const config: CapacitorConfig = {
     iosScheme: 'https',
   },
   plugins: {
-    // Note: @capacitor/browser was removed in v1.2.0 — trailers now play
-    // inline via the YouTube IFrame Player API instead of in
-    // SFSafariViewController.
+    // v1.4.0: Browser plugin is back. We tried inline iframe (v1.1.0) and
+    // the IFrame Player API (v1.2.0+); both ran into YouTube's parent-page
+    // origin validation, which rejects WKWebView's localhost regardless of
+    // scheme (custom, capacitor, or https) with error 153. SFSafariView-
+    // Controller opens youtube.com/watch in a real Safari context where
+    // YouTube works without complaint.
     App: {},
+    Browser: {
+      presentationStyle: 'fullscreen',
+    },
     Haptics: {},
     Dialog: {},
     Preferences: {
