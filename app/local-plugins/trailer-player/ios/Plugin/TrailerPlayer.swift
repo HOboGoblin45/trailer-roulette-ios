@@ -262,18 +262,16 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         ])
     }
 
-    /// HTML template — verbatim port of YTPlayerView-iframe-player.html
-    /// from hmhv/YoutubePlayer-in-WKWebView, with the player params
-    /// inlined for our single-use case.
-    ///
-    ///   - Uses YT.ready(...) (handles both already-loaded and loading
-    ///     states correctly)
-    ///   - Defines onReady / onStateChange / onPlayerError as named
-    ///     globals; events config references them by string
-    ///   - Callbacks fire via window.location.href = 'ytplayer://...'
-    ///     (this is what WKNavigationDelegate intercepts cleanly as a
-    ///     main-frame navigation; hidden-iframe tricks aren't needed)
-    ///   - playerVars includes origin: 'https://www.youtube.com'
+    /// HTML template — v1.8.4 adds visible on-screen diagnostics so we
+    /// can see exactly what's happening inside the modal without needing
+    /// Safari Web Inspector access. Stays the same architecture as v1.8.3
+    /// (verbatim WKYTPlayerView pattern) and adds:
+    ///   - Green-on-black debug strip pinned to the top of the page
+    ///   - One log line per lifecycle event (page loaded, script loaded,
+    ///     YT global, YT.ready, player created, onReady, state changes)
+    ///   - Visible error reporting if YT undefined or any callback throws
+    ///   - 6s "iframe_api never loaded" fallback (if the script tag's
+    ///     onerror doesn't fire but YT also never appears)
     private func playerHTML() -> String {
         return """
 <!DOCTYPE html>
@@ -282,7 +280,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
 <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <style>
-  body { margin: 0; width: 100%; height: 100%; background-color: #000000; }
+  body { margin: 0; width: 100%; height: 100%; background-color: #000000; color: #fff; font-family: -apple-system, sans-serif; }
   html { width: 100%; height: 100%; background-color: #000000; }
   .embed-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
   .embed-container iframe,
@@ -294,46 +292,129 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     width: 100% !important;
     height: 100% !important;
   }
+  #diag {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 9999;
+    background: rgba(0,0,0,0.85);
+    color: #9CFF9C;
+    font-family: -apple-system-monospaced, ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    padding: 6px 8px;
+    max-height: 50%;
+    overflow-y: auto;
+    word-break: break-all;
+    pointer-events: none;
+  }
+  #diag .err { color: #FFA08A; }
+  #diag .ok { color: #9CFF9C; }
+  #diag .info { color: #C9D9FF; }
 </style>
 </head>
 <body>
 <div class="embed-container">
   <div id="player"></div>
 </div>
-<script src="https://www.youtube.com/iframe_api" onerror="window.location.href='ytplayer://onYouTubeIframeAPIFailedToLoad'"></script>
+
+<div id="diag">starting…</div>
+
+<script>
+(function () {
+  var diag = document.getElementById('diag');
+  var t0 = Date.now();
+  function elapsed() { return ((Date.now() - t0) / 1000).toFixed(2) + 's'; }
+  window.__diagLog = function (msg, level) {
+    try {
+      var line = document.createElement('div');
+      line.className = level || 'info';
+      line.textContent = elapsed() + ' ' + msg;
+      diag.appendChild(line);
+      // Also forward to native console.
+      try { window.location.href = 'ytplayer://log?data=' + encodeURIComponent(msg); } catch (e) {}
+    } catch (e) {}
+  };
+  window.addEventListener('error', function (e) {
+    window.__diagLog('JS ERROR: ' + (e.message || e) + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'), 'err');
+  });
+  window.__diagLog('1. page loaded · ua=' + navigator.userAgent.slice(0, 60), 'info');
+  window.__diagLog('2. location=' + window.location.href, 'info');
+  window.__diagLog('3. videoId=\(videoId)', 'info');
+})();
+</script>
+
+<script src="https://www.youtube.com/iframe_api"
+        onload="window.__diagLog('4a. iframe_api SCRIPT LOADED · YT=' + (typeof YT), 'ok')"
+        onerror="window.__diagLog('4b. iframe_api SCRIPT FAILED', 'err'); window.location.href='ytplayer://onYouTubeIframeAPIFailedToLoad'"></script>
+
 <script>
 var player;
 var error = false;
 
-YT.ready(function () {
-  player = new YT.Player('player', {
-    videoId: '\(videoId)',
-    playerVars: {
-      autoplay: 1,
-      playsinline: 1,
-      rel: 0,
-      modestbranding: 1,
-      controls: 1,
-      fs: 1,
-      origin: 'https://www.youtube.com'
-    },
-    events: {
-      onReady: 'onReady',
-      onStateChange: 'onStateChange',
-      onPlaybackQualityChange: 'onPlaybackQualityChange',
-      onError: 'onPlayerError'
-    }
-  });
-  player.setSize(window.innerWidth, window.innerHeight);
-  window.location.href = 'ytplayer://onYouTubeIframeAPIReady';
-});
+// Watchdog: if YT global never appears, surface that explicitly.
+setTimeout(function () {
+  if (typeof YT === 'undefined' || !YT.ready) {
+    window.__diagLog('5x. YT global STILL UNDEFINED after 6s', 'err');
+    try { window.location.href = 'ytplayer://onError?data=-2'; } catch (e) {}
+  }
+}, 6000);
+
+function bootPlayer() {
+  try {
+    window.__diagLog('6. YT.ready fired · creating player…', 'ok');
+    player = new YT.Player('player', {
+      videoId: '\(videoId)',
+      playerVars: {
+        autoplay: 1,
+        playsinline: 1,
+        rel: 0,
+        modestbranding: 1,
+        controls: 1,
+        fs: 1,
+        origin: 'https://www.youtube.com'
+      },
+      events: {
+        onReady: 'onReady',
+        onStateChange: 'onStateChange',
+        onPlaybackQualityChange: 'onPlaybackQualityChange',
+        onError: 'onPlayerError'
+      }
+    });
+    try { player.setSize(window.innerWidth, window.innerHeight); } catch (e) {}
+    window.__diagLog('7. new YT.Player constructed', 'ok');
+    window.location.href = 'ytplayer://onYouTubeIframeAPIReady';
+  } catch (e) {
+    window.__diagLog('7x. YT.Player threw: ' + (e && e.message), 'err');
+    try { window.location.href = 'ytplayer://onError?data=-3'; } catch (e2) {}
+  }
+}
+
+// Wait for YT to be defined, then call YT.ready. The script tag's onload
+// usually fires before YT.ready is available, so we poll briefly.
+(function waitForYT(tries) {
+  if (typeof YT !== 'undefined' && YT.ready) {
+    window.__diagLog('5. YT global ready (' + tries + ' polls)', 'ok');
+    YT.ready(bootPlayer);
+    return;
+  }
+  if (tries > 60) {
+    window.__diagLog('5x. YT.ready not available after 6s polling', 'err');
+    try { window.location.href = 'ytplayer://onError?data=-4'; } catch (e) {}
+    return;
+  }
+  setTimeout(function () { waitForYT(tries + 1); }, 100);
+})(0);
 
 function onReady(event) {
+  window.__diagLog('8. onReady', 'ok');
   window.location.href = 'ytplayer://onReady';
-  try { event.target.playVideo(); } catch (e) {}
+  try { event.target.playVideo(); window.__diagLog('8a. playVideo() called', 'ok'); }
+  catch (e) { window.__diagLog('8x. playVideo threw: ' + e.message, 'err'); }
 }
 
 function onStateChange(event) {
+  var stateNames = { '-1': 'UNSTARTED', 0: 'ENDED', 1: 'PLAYING', 2: 'PAUSED', 3: 'BUFFERING', 5: 'CUED' };
+  window.__diagLog('9. state=' + (stateNames[event.data] || event.data), 'info');
   if (!error) {
     window.location.href = 'ytplayer://onStateChange?data=' + event.data;
   } else {
@@ -346,12 +427,13 @@ function onPlaybackQualityChange(event) {
 }
 
 function onPlayerError(event) {
+  window.__diagLog('!! onError code=' + event.data, 'err');
   if (event.data == 100) error = true;
   window.location.href = 'ytplayer://onError?data=' + event.data;
 }
 
 window.onresize = function () {
-  if (player) { player.setSize(window.innerWidth, window.innerHeight); }
+  if (player) { try { player.setSize(window.innerWidth, window.innerHeight); } catch (e) {} }
 };
 </script>
 </body>
@@ -368,7 +450,10 @@ window.onresize = function () {
         let baseURL = URL(string: "https://www.youtube.com")
         webView.loadHTMLString(html, baseURL: baseURL)
 
-        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+        // v1.8.4: longer watchdog so the diagnostic strip has time to
+        // be screenshotted. Real PLAYING state cancels this; we only
+        // hit the watchdog when the player never reaches play.
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: false) { [weak self] _ in
             guard let self = self, !self.didFinish else { return }
             self.dismissUnplayable("watchdog")
         }
@@ -470,6 +555,10 @@ window.onresize = function () {
             data = q.first(where: { $0.name == "data" })?.value
         }
         switch event {
+        case "log":
+            // v1.8.4 diagnostic forward — print on the iOS console so
+            // a tethered Mac could see it. Non-fatal.
+            print("[TrailerPlayer.js] \(data ?? "")")
         case "onYouTubeIframeAPIReady":
             // SDK script loaded successfully; the YT.ready callback will
             // create the player and fire onReady next.
