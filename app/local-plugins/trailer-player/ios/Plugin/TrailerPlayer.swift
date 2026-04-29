@@ -1,34 +1,48 @@
 //
 //  TrailerPlayer.swift
-//  Trailer Roulette — in-app YouTube playback (v1.8.2).
+//  Trailer Roulette — in-app YouTube playback (v1.8.3).
 //
-//  THIS VERSION IS A PORT of the proven WKYTPlayerView pattern.
+//  This is the proven WKYTPlayerView pattern, refined per:
 //
-//  Background: every approach that loaded a YouTube embed URL directly
-//  as the WKWebView's main frame (v1.1.0 inline iframe, v1.2.0 IFrame
-//  Player API, v1.5.x Vercel proxy, v1.7.x main-frame Referer trick,
-//  v1.8.0/v1.8.1 nav interception) failed for at least one common case
-//  because we were fighting WKWebView's request layer. The proper fix
-//  is the pattern Google's youtube-ios-player-helper / BuzzFeed's
-//  WKYTPlayerView library has used since 2014:
+//   • YouTube's official embedded player terms documentation:
+//     https://developers.google.com/youtube/terms/required-minimum-functionality#embedded-player-api-client-identity
+//     "API Clients that use the YouTube embedded player (including the
+//      YouTube IFrame Player API) must provide identification through
+//      the HTTP Referer request header... YouTube recommends using
+//      strict-origin-when-cross-origin Referrer-Policy."
 //
-//    1. Load a tiny inline HTML template via `loadHTMLString:baseURL:`
-//       with `baseURL = about:blank`. The HTML is the *parent* page that
-//       hosts the YouTube player.
-//    2. The HTML pulls in `https://www.youtube.com/iframe_api` (the
-//       official YouTube SDK script) and creates the player via
-//       `new YT.Player(...)`. YouTube's own client-side JS handles all
-//       the cross-origin handshake, postMessage origins, and the parts
-//       of the embed protocol that get tripped up when we try to be
-//       clever.
-//    3. JS → native callbacks travel through a custom `ytplayer://`
-//       URL scheme. The WKNavigationDelegate intercepts requests with
-//       that scheme, parses the path/query as event data, and cancels
-//       the navigation.
-//    4. The WKNavigationDelegate also acts as an allowlist for sub-
-//       resource loads — anything outside the YouTube/Google domain set
-//       gets cancelled (and treated as the unplayable signal when
-//       it's an attempt to escape to youtube.com proper).
+//   • The verbatim YTPlayerView-iframe-player.html template from
+//     hmhv/YoutubePlayer-in-WKWebView (Google's iOS reference impl).
+//
+//  Key design choices:
+//
+//   1. `baseURL = https://www.youtube.com/` (not about:blank). This
+//      makes WKWebView treat the loaded HTML as if served from
+//      youtube.com — all sub-resource requests automatically carry
+//      Referer: https://www.youtube.com/, satisfying YouTube's
+//      documented requirement.
+//
+//   2. The HTML template loads https://www.youtube.com/iframe_api
+//      (the official YouTube SDK script) and creates the player via
+//      `new YT.Player()`. YouTube's own JS handles the cross-origin
+//      handshake, postMessage origins, and embed protocol.
+//
+//   3. JS → native callbacks via the `ytplayer://` URL scheme. The
+//      JS does `window.location.href = 'ytplayer://...'` (matches the
+//      official template exactly). WKNavigationDelegate intercepts the
+//      navigation, parses the URL, and cancels.
+//
+//   4. WKNavigationDelegate also acts as an allowlist for sub-resource
+//      loads — only the YouTube/Google host set passes; main-frame nav
+//      to youtube.com/watch (the "embed disabled, watch on YT" link)
+//      is treated as the unplayable signal.
+//
+//   5. 10-second watchdog: if onPlaying never fires, dismiss as
+//      unplayable. Real playback events kill the watchdog.
+//
+//   6. onError codes 2/100/101/150/152 → dismiss as unplayable. React
+//      side records the bad youtubeKey and skips it for the rest of
+//      the session.
 //
 
 import Foundation
@@ -118,7 +132,7 @@ public class TrailerPlayer: CAPPlugin {
     }
 }
 
-// MARK: - View controller hosting the YT IFrame Player
+// MARK: - Player view controller
 
 class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
@@ -129,8 +143,6 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     private var webView: WKWebView!
     private var loadingIndicator: UIActivityIndicatorView!
 
-    /// Once true, we've decided this trailer is unplayable and are tearing
-    /// down — guards against double-dismiss.
     private var didFinish = false
     private var watchdogTimer: Timer?
 
@@ -138,10 +150,9 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     private static let accentColor = UIColor(red: 0.831, green: 0.686, blue: 0.216, alpha: 1.0)
     private static let textColor = UIColor(red: 0.957, green: 0.957, blue: 0.949, alpha: 1.0)
 
-    /// Hosts that the YT IFrame Player + embed need to load to play a video.
-    /// Any nav target outside this set is treated as either an external link
-    /// (cancelled silently) or — if it's youtube.com/watch — the "embed
-    /// disabled, escape to YT app" signal.
+    /// Hosts permitted by the WKNavigationDelegate allowlist. The set
+    /// matches what the YT IFrame Player loads in practice (player JS,
+    /// embed page, video CDN, fonts, ads).
     private static let allowedHosts: Set<String> = [
         "www.youtube.com",
         "youtube.com",
@@ -151,12 +162,14 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         "i.ytimg.com",
         "s.ytimg.com",
         "yt3.ggpht.com",
+        "yt3.googleusercontent.com",
         "fonts.gstatic.com",
         "www.gstatic.com",
         "fonts.googleapis.com",
         "play.google.com",
         "static.doubleclick.net",
         "googleads.g.doubleclick.net",
+        "tpc.googlesyndication.com",
     ]
 
     init(videoId: String, title: String, onDismiss: @escaping (String) -> Void) {
@@ -249,92 +262,97 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         ])
     }
 
-    /// The HTML template we load. Modeled on Google's
-    /// YTPlayerView-iframe-player.html resource. Key behaviors:
-    ///  - Loads the official IFrame API script from www.youtube.com.
-    ///  - Creates the player via `new YT.Player('player', {...})`.
-    ///  - Routes all events back to native via `ytplayer://` URL scheme.
-    private func playerHTML(videoId: String) -> String {
-        // %@ is replaced via String(format:) — we pre-escape the videoId
-        // (already validated as alnum/-/_) and avoid any Swift string
-        // interpolation that could break the HTML.
-        let safeVideoId = videoId
-            .replacingOccurrences(of: "\"", with: "")
-            .replacingOccurrences(of: "<", with: "")
-
+    /// HTML template — verbatim port of YTPlayerView-iframe-player.html
+    /// from hmhv/YoutubePlayer-in-WKWebView, with the player params
+    /// inlined for our single-use case.
+    ///
+    ///   - Uses YT.ready(...) (handles both already-loaded and loading
+    ///     states correctly)
+    ///   - Defines onReady / onStateChange / onPlayerError as named
+    ///     globals; events config references them by string
+    ///   - Callbacks fire via window.location.href = 'ytplayer://...'
+    ///     (this is what WKNavigationDelegate intercepts cleanly as a
+    ///     main-frame navigation; hidden-iframe tricks aren't needed)
+    ///   - playerVars includes origin: 'https://www.youtube.com'
+    private func playerHTML() -> String {
         return """
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <style>
-  html, body { height: 100%; width: 100%; margin: 0; padding: 0; background: #000; overflow: hidden; }
-  #player { width: 100%; height: 100%; display: block; }
+  body { margin: 0; width: 100%; height: 100%; background-color: #000000; }
+  html { width: 100%; height: 100%; background-color: #000000; }
+  .embed-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  .embed-container iframe,
+  .embed-container object,
+  .embed-container embed {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+  }
 </style>
 </head>
 <body>
-<div id="player"></div>
-<script src="https://www.youtube.com/iframe_api"></script>
+<div class="embed-container">
+  <div id="player"></div>
+</div>
+<script src="https://www.youtube.com/iframe_api" onerror="window.location.href='ytplayer://onYouTubeIframeAPIFailedToLoad'"></script>
 <script>
-  var player = null;
-  var didReportPlaying = false;
+var player;
+var error = false;
 
-  function postEvent(name, data) {
-    // Use a hidden iframe to fire a request to our custom scheme. This
-    // is the WKYTPlayerView pattern — WKNavigationDelegate intercepts
-    // the request, decodes the event, and cancels the navigation. We
-    // briefly insert + remove the iframe to avoid leaking DOM.
-    try {
-      var url = 'ytplayer://' + name;
-      if (data !== undefined && data !== null) {
-        url += '?data=' + encodeURIComponent(String(data));
-      }
-      var f = document.createElement('iframe');
-      f.style.display = 'none';
-      f.src = url;
-      document.body.appendChild(f);
-      setTimeout(function () { try { f.remove(); } catch(e){} }, 200);
-    } catch (e) { /* noop */ }
-  }
-
-  function onYouTubeIframeAPIReady() {
-    player = new YT.Player('player', {
-      videoId: '\(safeVideoId)',
-      playerVars: {
-        autoplay: 1,
-        playsinline: 1,
-        rel: 0,
-        modestbranding: 1,
-        controls: 1,
-        fs: 1
-      },
-      events: {
-        onReady: function (e) {
-          postEvent('onReady');
-          try { e.target.playVideo(); } catch (err) {}
-        },
-        onStateChange: function (e) {
-          // 1 = PLAYING, 0 = ENDED. Track first PLAYING for watchdog.
-          if (e.data === 1 && !didReportPlaying) {
-            didReportPlaying = true;
-            postEvent('onPlaying');
-          }
-          if (e.data === 0) postEvent('onEnded');
-        },
-        onError: function (e) {
-          // 2 / 100 / 101 / 150: unplayable; report and let native dismiss.
-          postEvent('onError', e.data);
-        }
-      }
-    });
-  }
-
-  // Nudge the API loader if the script gets cached without the global.
-  setTimeout(function () {
-    if (!player && typeof YT === 'undefined') {
-      postEvent('onError', -1);
+YT.ready(function () {
+  player = new YT.Player('player', {
+    videoId: '\(videoId)',
+    playerVars: {
+      autoplay: 1,
+      playsinline: 1,
+      rel: 0,
+      modestbranding: 1,
+      controls: 1,
+      fs: 1,
+      origin: 'https://www.youtube.com'
+    },
+    events: {
+      onReady: 'onReady',
+      onStateChange: 'onStateChange',
+      onPlaybackQualityChange: 'onPlaybackQualityChange',
+      onError: 'onPlayerError'
     }
-  }, 6000);
+  });
+  player.setSize(window.innerWidth, window.innerHeight);
+  window.location.href = 'ytplayer://onYouTubeIframeAPIReady';
+});
+
+function onReady(event) {
+  window.location.href = 'ytplayer://onReady';
+  try { event.target.playVideo(); } catch (e) {}
+}
+
+function onStateChange(event) {
+  if (!error) {
+    window.location.href = 'ytplayer://onStateChange?data=' + event.data;
+  } else {
+    error = false;
+  }
+}
+
+function onPlaybackQualityChange(event) {
+  window.location.href = 'ytplayer://onPlaybackQualityChange?data=' + event.data;
+}
+
+function onPlayerError(event) {
+  if (event.data == 100) error = true;
+  window.location.href = 'ytplayer://onError?data=' + event.data;
+}
+
+window.onresize = function () {
+  if (player) { player.setSize(window.innerWidth, window.innerHeight); }
+};
 </script>
 </body>
 </html>
@@ -342,15 +360,14 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     }
 
     private func loadPlayerHTML() {
-        let html = playerHTML(videoId: videoId)
-        // baseURL = about:blank is what WKYTPlayerView uses by default.
-        // The IFrame API and the embed handshake work with this — YouTube's
-        // own SDK scripts handle origin/referrer correctly.
-        let baseURL = URL(string: "about:blank")
+        let html = playerHTML()
+        // baseURL = https://www.youtube.com gives WKWebView a real-looking
+        // origin. Sub-resource requests pick up Referer: https://www.youtube.com/
+        // automatically — exactly what YouTube's embedded player terms doc
+        // requires for embedder identification.
+        let baseURL = URL(string: "https://www.youtube.com")
         webView.loadHTMLString(html, baseURL: baseURL)
 
-        // Watchdog: if onPlaying never fires within 10s, assume embed is
-        // dead and dismiss as unplayable. Real playback kills this.
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
             guard let self = self, !self.didFinish else { return }
             self.dismissUnplayable("watchdog")
@@ -385,25 +402,24 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
             return
         }
 
-        // ytplayer:// — our custom JS→native callback channel.
+        // ytplayer:// — JS→native callback channel.
         if url.scheme == "ytplayer" {
             handleCallback(url: url)
             decisionHandler(.cancel)
             return
         }
 
-        // about:blank for the initial loadHTMLString → allow.
-        if url.absoluteString == "about:blank" || url.scheme == "about" || url.scheme == "data" {
+        // about:blank, data:, file: schemes are part of how WKWebView
+        // bootstraps loadHTMLString; allow them.
+        if url.scheme == "about" || url.scheme == "data" || url.scheme == "file" {
             decisionHandler(.allow)
             return
         }
 
-        // YouTube + Google sub-resources for the IFrame Player + the
-        // embed page: allow.
         if let host = url.host, Self.allowedHosts.contains(host) {
-            // Special case: a main-frame nav to youtube.com/watch is the
-            // "embed disabled, watch on YT" escape link. Treat as
-            // unplayable + dismiss.
+            // Special case: main-frame nav to youtube.com/watch is the
+            // "embed disabled, watch on YouTube" escape link. Treat as
+            // unplayable.
             let isMain = navigationAction.targetFrame?.isMainFrame ?? false
             let path = url.path
             if isMain && (host == "www.youtube.com" || host == "youtube.com" || host == "m.youtube.com") &&
@@ -436,8 +452,6 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
                         createWebViewWith configuration: WKWebViewConfiguration,
                         for navigationAction: WKNavigationAction,
                         windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Block popup/window.open attempts. If a YT link tries to open a
-        // new window, treat it as the escape signal.
         if let url = navigationAction.request.url,
            let host = url.host,
            host.hasSuffix("youtube.com") || host == "youtu.be" {
@@ -456,24 +470,35 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
             data = q.first(where: { $0.name == "data" })?.value
         }
         switch event {
-        case "onReady":
-            // Spinner already cleared by didFinish navigation; nothing more.
+        case "onYouTubeIframeAPIReady":
+            // SDK script loaded successfully; the YT.ready callback will
+            // create the player and fire onReady next.
             break
-        case "onPlaying":
-            // Real playback started — kill the watchdog.
-            watchdogTimer?.invalidate(); watchdogTimer = nil
-        case "onEnded":
-            finish(reason: "ended")
+        case "onYouTubeIframeAPIFailedToLoad":
+            dismissUnplayable("api-load-failed")
+        case "onReady":
+            // Player constructed and play attempted. State change should
+            // follow shortly with PLAYING (1).
+            break
+        case "onStateChange":
+            // 1 = PLAYING, 0 = ENDED, 2 = PAUSED, 3 = BUFFERING
+            let state = Int(data ?? "") ?? -99
+            if state == 1 {
+                // Real playback — kill watchdog.
+                watchdogTimer?.invalidate(); watchdogTimer = nil
+            } else if state == 0 {
+                finish(reason: "ended")
+            }
+        case "onPlaybackQualityChange":
+            break
         case "onError":
             let code = Int(data ?? "") ?? -1
-            // 2=invalid id, 100=not found, 101/150=embed disabled, 152=variant
-            if [2, 100, 101, 150, 152].contains(code) {
+            // 2 = invalid id, 5 = HTML5 player, 100 = not found,
+            // 101 = embed disabled, 150 = same as 101, 152 = 2025 variant
+            if [2, 5, 100, 101, 150, 152].contains(code) {
                 dismissUnplayable("yt:\(code)")
-            } else if code == -1 {
-                dismissUnplayable("api-not-loaded")
             } else {
-                // Unknown code → still dismiss so user isn't stuck.
-                dismissUnplayable("yt:\(code)")
+                dismissUnplayable("yt:unknown:\(code)")
             }
         default:
             break
