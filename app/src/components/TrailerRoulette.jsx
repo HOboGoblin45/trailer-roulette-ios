@@ -332,6 +332,8 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       )}
 
       <div className="player-wrap">
+        {/* SwipeOverlay first in DOM, below Player in z-stack for taps. */}
+        <SwipeOverlay onSeen={onSeen} onSkip={onSkip} disabled={!current} />
         <Player
           trailer={current}
           isPlaying={isPlaying}
@@ -340,7 +342,6 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
           onEnded={onTrailerEnded}
           onDurationKnown={onTrailerDurationKnown}
         />
-        <SwipeOverlay onSeen={onSeen} onSkip={onSkip} disabled={!current} />
         <div className="player-overlay-controls">
           <button
             className="control-btn"
