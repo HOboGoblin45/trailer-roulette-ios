@@ -42,13 +42,17 @@ export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded
     onPlay?.();
     openingRef.current = true;
     try {
-      // Resolves when the user dismisses Safari. The plugin's resolve
-      // shape is { dismissed: true, reason: 'user' | 'replaced' | ... }.
-      await TrailerPlayer.openTrailer({ youtubeKey: trailer.youtubeKey });
-      // Treat dismiss as "I'm done with this one, next" — matches the
-      // app's channel-flipping intent. Reaction is null so we don't bias
-      // the taste profile from a passive dismiss.
+      // Resolves when the user dismisses the in-app modal player or
+      // when the trailer ends naturally. The plugin's resolve shape is
+      // { dismissed: true, reason: 'user' | 'ended' | 'replaced' | ... }.
+      await TrailerPlayer.openTrailer({
+        youtubeKey: trailer.youtubeKey,
+        title: trailer.title || '',
+      });
       onPause?.();
+      // Both ended and dismissed mean "advance the queue." The taste
+      // profile is shaped by explicit Seen/Skip swipes on the card, not
+      // by passively closing a trailer.
       onEnded?.();
     } catch (e) {
       const msg = e?.message || String(e);
