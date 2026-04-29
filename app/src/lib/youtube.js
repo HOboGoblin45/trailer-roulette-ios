@@ -2,8 +2,10 @@
  * YouTube URL helpers. We never download or modify YouTube content — we only
  * construct URLs that point at the official watch page or embeddable player.
  *
- * On iOS, watch URLs open in SFSafariViewController via @capacitor/browser.
- * On web, the embed URL is loaded into an <iframe> by Player.web.jsx.
+ * Since v1.2.0 both iOS and web use the YouTube IFrame Player API
+ * (see ytIframeApi.js + Player.{ios,web}.jsx). The embed URL below is
+ * still the static-iframe fallback path for when the IFrame API can't
+ * load (offline first-run, blocked CDN, etc.).
  */
 
 export function watchUrl(youtubeKey) {

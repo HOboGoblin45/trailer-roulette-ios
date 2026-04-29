@@ -17,10 +17,10 @@ const config: CapacitorConfig = {
     iosScheme: 'app.trailerroulette',
   },
   plugins: {
-    Browser: {
-      // SFSafariViewController presentation defaults
-      presentationStyle: 'fullscreen',
-    },
+    // Note: @capacitor/browser was removed in v1.2.0 — trailers now play
+    // inline via the YouTube IFrame Player API instead of in
+    // SFSafariViewController.
+    App: {},
     Haptics: {},
     Dialog: {},
     Preferences: {

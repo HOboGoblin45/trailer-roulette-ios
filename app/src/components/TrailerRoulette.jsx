@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import Header from './Header.jsx';
 import Player from './Player.jsx';
 import Filters from './Filters.jsx';
@@ -11,21 +12,32 @@ import { loadProfile, recordReaction, decay, saveProfile } from '../lib/tastePro
 import { get, set, KEYS } from '../lib/storage.js';
 import * as haptics from '../lib/haptics.js';
 
-const CYCLE_SECONDS = 90;
+// Maximum we'll show a single trailer before auto-advancing — used as a
+// safety cap when YouTube hasn't reported real duration yet, and as a
+// fallback if onEnded never fires (e.g. on the static-iframe fallback path).
+const MAX_TRAILER_SECONDS = 180;
+const DEFAULT_CYCLE_SECONDS = 90;
+
+// How many upcoming queue entries to prefetch trailer keys for. Two is
+// enough to cover the gap between cycles even if the user is rapid-skipping.
+const PREFETCH_LOOKAHEAD = 2;
 
 export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   const [filters, setFilters] = useState({ genre: null, decade: null });
   const [queue, setQueue] = useState([]);            // upcoming trailers
   const [current, setCurrent] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [secondsLeft, setSecondsLeft] = useState(CYCLE_SECONDS);
+  const [secondsLeft, setSecondsLeft] = useState(DEFAULT_CYCLE_SECONDS);
+  const [cycleSeconds, setCycleSeconds] = useState(DEFAULT_CYCLE_SECONDS);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Watchlist set, kept in memory for fast lookup; persisted on changes.
   const [watchlistIds, setWatchlistIds] = useState(new Set());
   const [loadError, setLoadError] = useState(null);
+  const [retrying, setRetrying] = useState(false);
 
   const timerRef = useRef(null);
+  const prefetchedRef = useRef(new Set()); // ids whose trailer key has been resolved
 
   // Boot: load profile, filters, watchlist; fetch initial queue.
   useEffect(() => {
@@ -68,6 +80,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
         youtubeKey: null,
       }));
       const ordered = weightedShuffle(candidates, p);
+      prefetchedRef.current = new Set(); // queue replaced, reset cache
       setQueue(ordered);
       // Auto-select the first as current; trailer key fetched lazily
       if (ordered.length > 0) {
@@ -84,12 +97,22 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleRetry = useCallback(async () => {
+    setRetrying(true);
+    try {
+      await loadQueue(filters, profile);
+    } finally {
+      setRetrying(false);
+    }
+  }, [filters, profile, loadQueue]);
+
   const selectAsCurrent = useCallback(async (trailer, depth = 0) => {
     let next = trailer;
     if (!trailer.youtubeKey) {
       try {
         const yt = await getTrailer(trailer.id);
         if (yt) next = { ...trailer, youtubeKey: yt.key };
+        prefetchedRef.current.add(trailer.id);
       } catch (e) {
         console.warn('[TrailerRoulette] getTrailer failed', e);
       }
@@ -112,10 +135,40 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       } catch { /* runtime is optional */ }
     }
     setCurrent(next);
-    setSecondsLeft(CYCLE_SECONDS);
+    setCycleSeconds(DEFAULT_CYCLE_SECONDS);
+    setSecondsLeft(DEFAULT_CYCLE_SECONDS);
   }, []);
 
-  // Cycle timer — drives auto-advance (replaces "trailer ended" detection on iOS).
+  // Prefetch the next N entries' YouTube keys in the background so when
+  // the cycle advances we don't pay TMDB latency in the gap.
+  useEffect(() => {
+    if (queue.length < 2) return;
+    const lookahead = queue.slice(1, 1 + PREFETCH_LOOKAHEAD);
+    let cancelled = false;
+    (async () => {
+      for (const m of lookahead) {
+        if (cancelled) return;
+        if (m.youtubeKey) continue;
+        if (prefetchedRef.current.has(m.id)) continue;
+        prefetchedRef.current.add(m.id);
+        try {
+          const yt = await getTrailer(m.id);
+          if (cancelled) return;
+          if (yt) {
+            setQueue((q) =>
+              q.map((entry) => (entry.id === m.id ? { ...entry, youtubeKey: yt.key } : entry)),
+            );
+          }
+        } catch (e) {
+          // Non-fatal — selectAsCurrent will retry when this entry surfaces.
+          console.debug('[TrailerRoulette] prefetch failed', m.id, e);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [queue]);
+
+  // Cycle timer — drives auto-advance with the dynamic cycleSeconds.
   useEffect(() => {
     if (!isPlaying || !current) return undefined;
     clearInterval(timerRef.current);
@@ -124,14 +177,42 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
         if (s <= 1) {
           haptics.light();
           advance('skip');
-          return CYCLE_SECONDS;
+          return cycleSeconds;
         }
         return s - 1;
       });
     }, 1000);
     return () => clearInterval(timerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying, current]);
+  }, [isPlaying, current, cycleSeconds]);
+
+  // Pause when app is backgrounded, resume on foreground. iOS only — on
+  // web the document visibility events handle this naturally.
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'ios') return undefined;
+    let sub;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { App } = await import('@capacitor/app');
+        if (cancelled) return;
+        sub = await App.addListener('appStateChange', (state) => {
+          if (state.isActive) {
+            // Resume: restart cycle if there's a trailer loaded.
+            if (current?.youtubeKey) setIsPlaying(true);
+          } else {
+            setIsPlaying(false);
+          }
+        });
+      } catch (e) {
+        console.warn('[TrailerRoulette] @capacitor/app unavailable', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try { sub?.remove?.(); } catch { /* noop */ }
+    };
+  }, [current?.youtubeKey]);
 
   const advance = useCallback(async (reaction = null) => {
     if (current && reaction) {
@@ -149,6 +230,22 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       return rest;
     });
   }, [current, filters, profile, loadQueue, selectAsCurrent]);
+
+  // YouTube IFrame Player → "trailer ended naturally" → advance immediately.
+  const onTrailerEnded = useCallback(() => {
+    haptics.light();
+    advance('seen'); // they watched the whole thing → positive signal
+  }, [advance]);
+
+  // YouTube IFrame Player reports the real duration on ready — use it to
+  // time the cycle precisely instead of the 90s default. Cap at MAX so a
+  // 4-minute behind-the-scenes doesn't trap the viewer.
+  const onTrailerDurationKnown = useCallback((duration) => {
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const s = Math.min(Math.ceil(duration), MAX_TRAILER_SECONDS);
+    setCycleSeconds(s);
+    setSecondsLeft(s);
+  }, []);
 
   const onSeen = useCallback(() => {
     haptics.medium();
@@ -202,16 +299,35 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
         onOpenWatchlist={onOpenWatchlist}
         onOpenAbout={onOpenAbout}
         watchlistCount={watchlistIds.size}
-        cycleProgress={(CYCLE_SECONDS - secondsLeft) / CYCLE_SECONDS}
+        cycleProgress={(cycleSeconds - secondsLeft) / cycleSeconds}
       />
 
       {loadError && (
         <div style={{
           background: '#E26D5C', color: '#fff', padding: '12px 16px',
           fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word'
+          wordBreak: 'break-word', display: 'flex', flexDirection: 'column', gap: 8,
         }}>
-          <strong>TMDB load failed:</strong> {loadError}
+          <div><strong>TMDB load failed:</strong> {loadError}</div>
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            style={{
+              alignSelf: 'flex-start',
+              background: '#fff',
+              color: '#E26D5C',
+              border: 'none',
+              borderRadius: 4,
+              padding: '6px 14px',
+              fontWeight: 600,
+              fontSize: 13,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              opacity: retrying ? 0.6 : 1,
+            }}
+          >
+            {retrying ? 'Retrying…' : 'Try again'}
+          </button>
         </div>
       )}
 
@@ -221,6 +337,8 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
           isPlaying={isPlaying}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
+          onEnded={onTrailerEnded}
+          onDurationKnown={onTrailerDurationKnown}
         />
         <SwipeOverlay onSeen={onSeen} onSkip={onSkip} disabled={!current} />
         <div className="player-overlay-controls">

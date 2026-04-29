@@ -1,7 +1,7 @@
 {
   "name": "trailer-roulette",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "Shuffle through movie trailers like a TV channel.",
   "scripts": {
@@ -19,7 +19,7 @@
     "icons:generate": "npx capacitor-assets generate --ios"
   },
   "dependencies": {
-    "@capacitor/browser": "^6.0.0",
+    "@capacitor/app": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/dialog": "^6.0.0",
     "@capacitor/haptics": "^6.0.0",
