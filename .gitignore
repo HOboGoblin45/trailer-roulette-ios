@@ -32,3 +32,6 @@ build/
 
 # Local preview-server logs from screenshot capture script
 app/preview.*.txt
+
+# Local test artifacts / screenshots
+/test-results/

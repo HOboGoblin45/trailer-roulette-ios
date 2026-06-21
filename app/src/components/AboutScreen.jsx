@@ -7,7 +7,7 @@
  */
 import { Capacitor } from '@capacitor/core';
 
-const VERSION = '1.8.0';
+const VERSION = import.meta.env.VITE_APP_VERSION || '2.0.0';
 
 export default function AboutScreen({ onClose }) {
   const platform = Capacitor.getPlatform();
@@ -22,7 +22,7 @@ export default function AboutScreen({ onClose }) {
 
       <section className="about-section">
         <h2>Trailer Roulette</h2>
-        <p className="tagline">A guided tour of pre-2010 cinema, one trailer at a time.</p>
+        <p className="tagline">Every era of cinema, one trailer at a time.</p>
         <p className="version">v{VERSION} · {platform}</p>
       </section>
 
@@ -49,6 +49,9 @@ export default function AboutScreen({ onClose }) {
         <p>
           Trailers play via YouTube&apos;s official embedded player. Trailer Roulette
           does not host, modify, or redistribute trailer content.
+        </p>
+        <p>
+          &ldquo;Where to watch&rdquo; streaming availability provided by JustWatch.
         </p>
       </section>
 

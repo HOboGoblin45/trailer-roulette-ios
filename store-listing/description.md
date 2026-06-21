@@ -1,8 +1,7 @@
-# App Store description — v1.8 final
+# App Store description — v2.0.1 (all-eras discovery)
 
-Paste this directly into App Store Connect. Order is intentional — the first
-three lines are above the App Store fold; the unique pre-2010 positioning is
-the headline.
+Mirrors what is live in App Store Connect. Positioning: discover any movie's
+trailer, across every era, then decide what to watch.
 
 ---
 
@@ -14,47 +13,47 @@ Trailer Roulette
 
 ## Subtitle (≤30 chars)
 ```
-Trailers from another era.
+Discover your next movie.
 ```
-(26 chars.)
+(25 chars.)
 
 ## Description (≤4000 chars)
 
 ```
-Trailer Roulette is a guided tour of pre-2010 cinema, one trailer at a time. Spin through movies from the 70s, 80s, 90s and 2000s — the era that built modern Hollywood — save the ones that hit, and let the app learn your taste.
+Trailer Roulette is the fun way to discover your next movie. Spin through trailers from every era — timeless classics and brand-new releases alike — and let the app learn what you love.
 
 WHAT YOU GET
 
-• A classic catalog. The default queue draws from pre-2010 movies with broad recognition. Want something newer? Flip the Era toggle and the catalog opens up to the 2010s and 2020s.
+• Endless shuffle. Tap Play and the trailer opens in a clean fullscreen player. When it ends, the next one queues up. Swipe to skip what doesn't grab you.
 
-• Channel-flipping trailers. Tap Play; the trailer opens in a clean fullscreen player inside the app. When it ends, the next one queues up. Swipe to skip what doesn't grab you.
+• Every era of cinema. The catalog spans the 1970s through today, drawn from thousands of films. Want to narrow it? Flip to Classic (pre-2010) or Modern, or filter by genre and decade.
 
-• Watchlist. Tap the heart on anything to save it for later. Your list, on your device, no account needed.
+• Search anything. Jump straight to a specific movie, or pull up an actor and shuffle through their filmography.
 
-• Seen it / Skip it swipes. Right for what you loved, left for what you didn't. The app builds a private taste profile right on your phone and biases future shuffles toward what you'll likely love. Nothing leaves the device.
+• Where to watch. See which streaming services carry each movie, so you can go from trailer to play in seconds.
 
-• Filters. Genre + decade chips shape the queue. Build a "Friday night horror," a "70s Western," a "90s rom-com" run.
+• Watchlist. Tap the heart to save any movie for later. Your list, on your device, no account needed.
 
-• AirPlay. Throw it on the TV with one tap.
+• Seen it / Skip it swipes. Right for what you loved, left for what you didn't. The app builds a private taste profile right on your phone and tilts future shuffles toward what you'll likely love. Nothing leaves the device.
 
 • No accounts. No tracking. No ads. Everything stays on your phone.
 
 ABOUT TRAILERS
 
-Trailer Roulette plays trailers via YouTube's official embedded player in an in-app modal. We don't host, copy, or modify trailers — we curate the feed and learn what you love.
+Trailers play via YouTube's official embedded player. Trailer Roulette doesn't host, copy, or modify trailers — it curates the feed and learns what you love.
 
-Movie metadata from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
+Movie data from TMDB. Streaming availability from JustWatch. This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 Questions or feedback: crescicharles@gmail.com
 ```
 
-(~1450 chars; lots of room for testimonials in v1.x+.)
+(~1500 chars.)
 
-## Apple required disclosures footer
-*This product uses the TMDB API but is not endorsed or certified by TMDB.* — already included above; keep the line in any future revisions.
+## Required disclosures
+- *This product uses the TMDB API but is not endorsed or certified by TMDB.* — keep in any revision.
+- *Streaming availability provided by JustWatch.* — required attribution for the "Where to watch" feature (TMDB sources watch-provider data from JustWatch). Also shown on the in-app About screen.
 
-## Words/phrases banned from this listing
+## Words/phrases to keep avoiding
 - "free trailers" / "watch free movies" — 5.2 trigger
-- "stream movies" / "movie streaming" — implies licensed streaming we don't have
-- Competitor names (JustWatch, Reelgood, MovieFone) — 5.2 trigger
-- "powered by YouTube" — implies official partnership
+- "powered by YouTube" — implies an official partnership we don't have
+- Do NOT claim the app itself streams or plays full movies. "Where to watch" only points users to third-party services; "streaming services carry each movie" is accurate framing and is tied to the real JustWatch-backed feature.

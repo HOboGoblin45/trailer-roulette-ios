@@ -6,17 +6,22 @@ import * as haptics from '../lib/haptics.js';
 /**
  * iOS player (v1.6.0) — local TrailerPlayer Capacitor plugin.
  *
- * The plugin opens YouTube watch URLs in SFSafariViewController, which is
- * a real Safari context. This sidesteps:
- *   - WKWebView Referer-stripping bug (WebKit Bug 169846) that blocks
- *     every iframe-based approach with YouTube error 153
- *   - @capacitor/browser SceneDelegate fullscreen silent-fail bug
- *     (ionic-team/capacitor#5969)
+ * This component calls the plugin's openTrailer({ youtubeKey, title }).
+ * The plugin presents a fullscreen modal UIViewController hosting a fresh
+ * WKWebView, which does a top-level HTTPS navigation to the Vercel proxy
+ * page (https://trailer-roulette.vercel.app/embed?v=ID) — not loadHTMLString,
+ * and not SFSafariViewController. The proxy page hosts YouTube's official
+ * iframe under a real third-party https origin, then forwards YT IFrame
+ * Player events to native via webkit.messageHandlers.trailerEvent. The
+ * plugin resolves the openTrailer promise on ended / user-dismiss /
+ * unplayable.
  *
- * UX: tap Play → fullscreen Safari modal slides up → user watches →
- * dismiss → app advances to next trailer. The dismiss is the advance
- * signal; matches Apple's HIG for video content (TV+, Music videos,
- * etc. all use the same modal-fullscreen pattern).
+ * Why prior approaches failed: serving the iframe via loadHTMLString gives
+ * it an opaque/null origin, so YouTube's referer-required embedder check
+ * rejects playback, and WebKit Bug 169846 strips the Referer header from
+ * WKWebView iframe requests — both yield YouTube error 153. Loading a real
+ * https proxy page gives the iframe a legitimate origin and Referer, which
+ * is what makes embedded playback work inside the WKWebView.
  */
 export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded }) {
   const openingRef = useRef(false);
@@ -103,7 +108,7 @@ export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded
       </button>
 
       {!hasTrailer && (
-        <p className="player-hint">Swipe to skip — we'll find another.</p>
+        <p className="player-hint">Swipe to skip — we&apos;ll find another.</p>
       )}
 
       {error && (

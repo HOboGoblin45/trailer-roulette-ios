@@ -1,44 +1,37 @@
-# Promotional text — v1.0 final
+# Promotional text — v2.0.1
 
 170-char field, updateable WITHOUT resubmission. Use it for time-bound or rotating copy.
 
-## v1.0 launch (paste this)
+## Live now (in App Store Connect)
 
 ```
-New: Watchlist + Seen it/Skip it swipes. The more you swipe, the smarter your shuffles get. No accounts. No tracking. Your taste, your phone.
+Now with Search and Where to Watch: find any movie or actor, see where it's streaming, and shuffle trailers from every era. No accounts. No tracking.
 ```
 
-**Char count: 142 / 170.**
+**Char count: 149 / 170.**
 
 ## Rotation candidates
+Update without a new submission as the product evolves or seasons change.
 
-Update without a new submission as the product evolves or seasons change. Keep one always pinned to a current value prop.
-
-### Q4 / awards season
+### Generic discovery
 ```
-Awards season picks: filter by Best Picture nominees, save the trailers you missed. No accounts, no tracking.
+Discover your next movie. Shuffle trailers from every era, search any film or actor, and see where to watch. No accounts, no ads.
 ```
-(112 chars)
+(128 chars)
 
 ### Halloween
 ```
-Spin through horror. Save the scares for movie night. Let the app learn what makes you flinch.
+Spin through horror from every era. Save the scares for movie night, and see where to stream them.
 ```
-(96 chars)
+(98 chars)
 
-### v1.1 release of Couple's Mode
+### Awards season
 ```
-v1.1 is here: Couple's Mode lets you and your favorite human vote on every trailer. The list shows what you both loved.
+Catching up before the awards? Shuffle the nominees' trailers, build a watchlist, and find where to watch.
 ```
-(122 chars)
-
-### Generic fallback
-```
-Discover what you love. Skip what you don't. Build a watchlist on your phone — no account, no ads, no nonsense.
-```
-(112 chars)
+(106 chars)
 
 ## Things to NOT put in promotional text
 - Time-sensitive promises ("launching next week!") that may go stale
-- Pricing claims ("free forever") that constrain monetization in v1.1+
-- Anything you can't take back without rewriting the entire listing
+- Claims the app streams or plays full movies (it points to where to watch only)
+- Anything you can't take back without rewriting the whole listing

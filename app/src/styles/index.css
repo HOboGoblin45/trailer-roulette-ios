@@ -704,6 +704,113 @@ a { color: var(--gold); text-decoration: none; }
   .up-next-handle { display: none; }
 }
 
+/* ───────── Header right-side button group ───────── */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ───────── Meta badges (rating · runtime · genres) ───────── */
+.meta-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+.meta-badges .badge {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+.meta-badges .badge-rating { color: var(--gold); }
+
+/* ───────── Where to watch ───────── */
+.where-to-watch {
+  font-size: 13px;
+  color: var(--fg-2);
+  margin: 8px 0 0;
+}
+.where-to-watch a { color: var(--gold); text-decoration: none; }
+.where-to-watch a:active { color: var(--gold-2); }
+
+/* ───────── Search screen ───────── */
+.search-input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  margin: 0 4px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--fg);
+  font-size: 16px; /* >=16px avoids iOS input zoom */
+  font-family: var(--font);
+  -webkit-appearance: none;
+}
+.search-input::placeholder { color: var(--fg-dim); }
+.search-input:focus { outline: 2px solid var(--gold); }
+
+.search-hint {
+  color: var(--fg-dim);
+  text-align: center;
+  padding: 32px 24px;
+}
+.search-group { padding: 0 16px; }
+.search-section {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+  margin: 16px 0 8px;
+}
+.search-people, .search-movies { list-style: none; margin: 0; padding: 0; }
+
+.search-person, .search-movie {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+.search-person:active, .search-movie:active { background: var(--bg-2); }
+.search-person img, .search-movie img {
+  width: 44px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--bg-3);
+}
+.search-person img { width: 48px; height: 48px; border-radius: 50%; }
+.search-avatar-fallback, .search-poster-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-3);
+  color: var(--gold);
+  flex-shrink: 0;
+}
+.search-poster-fallback { width: 44px; height: 64px; border-radius: 6px; }
+.search-person-name { font-size: 16px; font-weight: 600; }
+.search-movie-meta { display: flex; flex-direction: column; gap: 2px; }
+.search-movie-title { font-size: 16px; font-weight: 600; }
+.search-movie-meta small { color: var(--fg-dim); font-size: 13px; }
+
 /* ───────── Reduced motion preference ───────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -46,36 +46,48 @@ async function call(path, params = {}) {
 }
 
 /**
- * The default catalog window. Trailer Roulette is positioned as a tour of
- * pre-2010 cinema — fewer YouTube embed restrictions on older studio
- * uploads, and a sharper editorial position than "what's hot now."
- *
- * Users can opt into modern cinema via the Era toggle in Filters; that
- * sets `era: 'modern'` and we drop the upper bound here.
+ * Upper bound for the optional 'classic' era filter (pre-2010). The app's
+ * default catalog spans ALL eras of cinema; selecting Classic caps results
+ * at this date, while Modern starts at 2010.
  */
 export const DEFAULT_ERA_END = '2009-12-31';
 
-export async function discoverMovies({ genre, decade, era = 'classic', page = 1 } = {}) {
-  // Higher vote_count threshold for the classic era so the queue is
-  // anchored to recognizable films, not deep-cuts. Modern era keeps the
-  // looser threshold because TMDB has full popularity signals on recent
-  // releases.
-  const isClassic = era !== 'modern';
+export async function discoverMovies({ genre, decade, era = 'all', page = 1 } = {}) {
+  // Vote-count floor keeps the queue anchored to recognizable films even as
+  // we page deep into the catalog. The default 'all' era spans the entire
+  // history of cinema; 'classic' caps at 2009 and 'modern' starts at 2010 for
+  // users who want to narrow the window.
   const params = {
     sort_by: 'popularity.desc',
     page,
     include_adult: false,
-    'vote_count.gte': isClassic ? 250 : 100,
+    'vote_count.gte': era === 'modern' ? 100 : 200,
   };
   if (genre) params.with_genres = genre;
   if (decade) {
     params['primary_release_date.gte'] = `${decade}-01-01`;
     params['primary_release_date.lte'] = `${Number(decade) + 9}-12-31`;
-  } else if (isClassic) {
-    // Classic era default: anything released up to and including 2009.
+  } else if (era === 'classic') {
+    // Classic: released up to and including 2009.
     params['primary_release_date.lte'] = DEFAULT_ERA_END;
+  } else if (era === 'modern') {
+    // Modern: 2010 onward.
+    params['primary_release_date.gte'] = '2010-01-01';
   }
+  // era === 'all' (default): no release-date bound — the full catalog.
   return call('/discover/movie', params);
+}
+
+// TMDB's /discover endpoint paginates the full catalog (20 results per page)
+// but only exposes the first 500 pages. We pick a random page within the
+// known range so the queue keeps drawing fresh movies from deep in the
+// catalog instead of replaying page 1's ~20 most-popular titles forever.
+export const TMDB_MAX_DISCOVER_PAGE = 500;
+
+export function pickDiscoverPage(totalPages, max = TMDB_MAX_DISCOVER_PAGE) {
+  const cap = Math.min(Math.max(1, Math.floor(totalPages || 1)), max);
+  if (cap <= 1) return 1;
+  return Math.floor(Math.random() * cap) + 1;
 }
 
 export async function getTrailer(movieId) {
@@ -92,6 +104,80 @@ export async function getTrailer(movieId) {
 
 export async function getMovieDetails(movieId) {
   return call(`/movie/${movieId}`);
+}
+
+// Full TMDB movie-genre id → name map (used for genre tags on the card).
+export const MOVIE_GENRES = {
+  28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime',
+  99: 'Documentary', 18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History',
+  27: 'Horror', 10402: 'Music', 9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi',
+  10770: 'TV Movie', 53: 'Thriller', 10752: 'War', 37: 'Western',
+};
+
+export function genreNames(ids = []) {
+  return (ids || []).map((id) => MOVIE_GENRES[id]).filter(Boolean);
+}
+
+/**
+ * Normalize a raw TMDB movie object into the app's trailer-candidate shape.
+ * Used by discover, search, recommendations, and person credits so the
+ * queue is uniform regardless of which endpoint produced the movie.
+ */
+export function toTrailerCandidate(m) {
+  return {
+    id: m.id,
+    title: m.title || m.name || '',
+    overview: m.overview || '',
+    year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
+    runtime: null,
+    genre_ids: m.genre_ids || [],
+    poster_path: m.poster_path || null,
+    backdrop_path: m.backdrop_path || null,
+    vote_average: typeof m.vote_average === 'number' ? m.vote_average : null,
+    youtubeKey: null,
+  };
+}
+
+/**
+ * Streaming / rent / buy availability for a movie in a region (default US).
+ * Data is sourced by TMDB from JustWatch (attribution required in-app).
+ * Returns null when no providers are listed for the region.
+ */
+export async function getWatchProviders(movieId, region = 'US') {
+  const data = await call(`/movie/${movieId}/watch/providers`);
+  const r = (data.results && data.results[region]) || null;
+  if (!r) return null;
+  const names = (list) => (list || []).map((p) => p.provider_name);
+  return {
+    link: r.link || null,
+    flatrate: names(r.flatrate),
+    rent: names(r.rent),
+    buy: names(r.buy),
+  };
+}
+
+/** Search movies + people in one call. Returns { movies, people } (raw TMDB objects). */
+export async function searchMulti(query) {
+  const q = (query || '').trim();
+  if (!q) return { movies: [], people: [] };
+  const data = await call('/search/multi', { query: q, include_adult: false, page: 1 });
+  const results = data.results || [];
+  return {
+    movies: results.filter((r) => r.media_type === 'movie'),
+    people: results.filter((r) => r.media_type === 'person'),
+  };
+}
+
+/** A person's movie cast credits, most popular first (raw TMDB movie objects). */
+export async function getPersonMovies(personId) {
+  const data = await call(`/person/${personId}/movie_credits`);
+  return (data.cast || []).slice().sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+}
+
+/** Movies recommended off a given movie (raw TMDB movie objects). */
+export async function getRecommendations(movieId) {
+  const data = await call(`/movie/${movieId}/recommendations`);
+  return data.results || [];
 }
 
 export function posterUrl(path, size = 'w500') {

@@ -6,11 +6,24 @@ import Filters from './Filters.jsx';
 import UpNext from './UpNext.jsx';
 import SwipeOverlay from './SwipeOverlay.jsx';
 import CastButton from './CastButton.jsx';
-import { discoverMovies, getTrailer, getMovieDetails } from '../lib/tmdb.js';
+import {
+  discoverMovies, getTrailer, getMovieDetails, pickDiscoverPage,
+  getWatchProviders, getRecommendations, getPersonMovies, toTrailerCandidate, genreNames,
+} from '../lib/tmdb.js';
 import { weightedShuffle } from '../lib/shuffleWeighting.js';
 import { loadProfile, recordReaction, decay, saveProfile } from '../lib/tasteProfile.js';
 import { get, set, KEYS } from '../lib/storage.js';
+import { shareTrailer } from '../lib/share.js';
+import Search from './Search.jsx';
 import * as haptics from '../lib/haptics.js';
+
+// "128" → "2h 8m"; "95" → "1h 35m"; "47" → "47m".
+function formatRuntime(mins) {
+  if (!Number.isFinite(mins) || mins <= 0) return null;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
 
 // Maximum we'll show a single trailer before auto-advancing — used as a
 // safety cap when YouTube hasn't reported real duration yet, and as a
@@ -25,7 +38,7 @@ const PREFETCH_LOOKAHEAD = 2;
 export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   // Default era is 'classic' (pre-2010). Persisted in storage so a user's
   // explicit choice survives across sessions.
-  const [filters, setFilters] = useState({ era: 'classic', genre: null, decade: null });
+  const [filters, setFilters] = useState({ era: 'all', genre: null, decade: null });
   const [queue, setQueue] = useState([]);            // upcoming trailers
   const [current, setCurrent] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -37,6 +50,9 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   const [watchlistIds, setWatchlistIds] = useState(new Set());
   const [loadError, setLoadError] = useState(null);
   const [retrying, setRetrying] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  // Streaming/rent/buy availability for the current movie (lazy, US region).
+  const [currentProviders, setCurrentProviders] = useState(null);
 
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set()); // ids whose trailer key has been resolved
@@ -45,6 +61,10 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   // iOS player's onEnded({ unplayable: true, youtubeKey }) callback and
   // skip any movie whose resolved key is in here.
   const unplayableKeysRef = useRef(new Set());
+  // Total pages available from TMDB /discover for the current filter (learned
+  // on the first fetch, capped at TMDB's 500-page limit). Refills draw a random
+  // page within this range so the catalog stays deep instead of repeating.
+  const totalPagesRef = useRef(1);
 
   // Boot: load profile, filters, watchlist; fetch initial queue.
   useEffect(() => {
@@ -62,11 +82,11 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
 
       setProfile(storedProfile);
       if (storedFilters) {
-        // Migrate older shapes (no era field) to default classic.
-        setFilters({ era: 'classic', ...storedFilters });
+        // Migrate older shapes (no era field) to the all-eras default.
+        setFilters({ era: 'all', ...storedFilters });
       }
       setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
-      await loadQueue(storedFilters || filters, storedProfile);
+      await loadQueue(storedFilters || filters, storedProfile, { fresh: true });
     }
     boot();
     return () => { cancelled = true; };
@@ -74,25 +94,25 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   }, []);
 
   // Load queue whenever filters change.
-  const loadQueue = useCallback(async (f, p) => {
+  const loadQueue = useCallback(async (f, p, { fresh = false } = {}) => {
     try {
       setLoadError(null);
+      // A "fresh" load (boot, filter change, retry) starts at page 1 — the
+      // most recognizable titles — and re-learns how many pages this filter
+      // has. A refill (queue exhausted) draws a random page from that range
+      // so the queue keeps pulling new movies instead of looping the top ~20.
+      if (fresh) totalPagesRef.current = 1;
+      const page = fresh ? 1 : pickDiscoverPage(totalPagesRef.current);
       const data = await discoverMovies({
         genre: f.genre,
         decade: f.decade,
-        era: f.era || 'classic',
+        era: f.era || 'all',
+        page,
       });
-      const candidates = (data.results || []).map((m) => ({
-        id: m.id,
-        title: m.title,
-        overview: m.overview,
-        year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
-        runtime: null,
-        genre_ids: m.genre_ids || [],
-        poster_path: m.poster_path,
-        backdrop_path: m.backdrop_path,
-        youtubeKey: null,
-      }));
+      if (Number.isFinite(data.total_pages)) {
+        totalPagesRef.current = data.total_pages;
+      }
+      const candidates = (data.results || []).map(toTrailerCandidate);
       const ordered = weightedShuffle(candidates, p);
       prefetchedRef.current = new Set(); // queue replaced, reset cache
       setQueue(ordered);
@@ -102,11 +122,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       }
     } catch (err) {
       console.error('[TrailerRoulette] loadQueue failed', err);
-      const msg = err?.message || String(err);
-      const apiKeyHint = (typeof import.meta.env.VITE_TMDB_API_KEY === 'string' && import.meta.env.VITE_TMDB_API_KEY.length > 20)
-        ? 'API key bundled (' + import.meta.env.VITE_TMDB_API_KEY.length + ' chars)'
-        : 'API key MISSING from build (' + (import.meta.env.VITE_TMDB_API_KEY || 'undefined') + ')';
-      setLoadError(msg + ' | ' + apiKeyHint);
+      setLoadError(err?.message || String(err));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -114,7 +130,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   const handleRetry = useCallback(async () => {
     setRetrying(true);
     try {
-      await loadQueue(filters, profile);
+      await loadQueue(filters, profile, { fresh: true });
     } finally {
       setRetrying(false);
     }
@@ -154,6 +170,21 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
     setSecondsLeft(DEFAULT_CYCLE_SECONDS);
   }, []);
 
+  // Fetch "where to watch" providers for the current movie (non-blocking;
+  // optional data sourced from JustWatch via TMDB).
+  useEffect(() => {
+    setCurrentProviders(null);
+    if (!current?.id) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await getWatchProviders(current.id);
+        if (!cancelled) setCurrentProviders(p);
+      } catch { /* providers are optional */ }
+    })();
+    return () => { cancelled = true; };
+  }, [current?.id]);
+
   // Prefetch the next N entries' YouTube keys in the background so when
   // the cycle advances we don't pay TMDB latency in the gap.
   useEffect(() => {
@@ -185,6 +216,10 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
 
   // Cycle timer — drives auto-advance with the dynamic cycleSeconds.
   useEffect(() => {
+    // On iOS the native TrailerPlayer modal owns the full trailer lifecycle
+    // and reports completion via onEnded; the JS countdown must not advance
+    // the queue underneath the open modal (caused double-advance/desync).
+    if (Capacitor.getPlatform() === 'ios') return undefined;
     if (!isPlaying || !current) return undefined;
     clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
@@ -300,7 +335,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   const onFiltersChange = useCallback(async (next) => {
     setFilters(next);
     await set(KEYS.FILTERS, next);
-    await loadQueue(next, profile);
+    await loadQueue(next, profile, { fresh: true });
   }, [profile, loadQueue]);
 
   const toggleWatchlist = useCallback(async () => {
@@ -324,18 +359,47 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
     setWatchlistIds(new Set(nextList.map((w) => w.id)));
   }, [current, watchlistIds]);
 
+  const onShare = useCallback(() => {
+    if (!current?.youtubeKey) return;
+    haptics.light();
+    shareTrailer({ title: current.title, youtubeKey: current.youtubeKey });
+  }, [current]);
+
+  // Search → play a chosen movie (seeding its recommendations behind it) or
+  // load an actor's filmography into the queue.
+  const onSearchMovie = useCallback(async (movie) => {
+    const base = toTrailerCandidate(movie);
+    let recs = [];
+    try { recs = (await getRecommendations(movie.id)).map(toTrailerCandidate); } catch { /* optional */ }
+    prefetchedRef.current = new Set();
+    totalPagesRef.current = 1;
+    setQueue([base, ...recs]);
+    selectAsCurrent(base);
+  }, [selectAsCurrent]);
+
+  const onSearchPerson = useCallback(async (person) => {
+    let movies = [];
+    try { movies = (await getPersonMovies(person.id)).map(toTrailerCandidate); } catch { /* optional */ }
+    if (movies.length === 0) return;
+    prefetchedRef.current = new Set();
+    totalPagesRef.current = 1;
+    setQueue(movies);
+    selectAsCurrent(movies[0]);
+  }, [selectAsCurrent]);
+
   return (
     <div className="trailer-roulette">
       <Header
         onOpenWatchlist={onOpenWatchlist}
         onOpenAbout={onOpenAbout}
+        onOpenSearch={() => { haptics.light(); setShowSearch(true); }}
         watchlistCount={watchlistIds.size}
         cycleProgress={(cycleSeconds - secondsLeft) / cycleSeconds}
       />
 
       {loadError && (
         <div className="tmdb-error-banner">
-          <div><strong>Couldn't load trailers.</strong></div>
+          <div><strong>Couldn&apos;t load trailers.</strong></div>
           <div style={{ fontSize: 12, opacity: 0.85 }}>{loadError}</div>
           <button onClick={handleRetry} disabled={retrying}>
             {retrying ? 'Retrying…' : 'Try again'}
@@ -363,6 +427,14 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
             {watchlistIds.has(current?.id) ? '♥' : '♡'}
           </button>
           <CastButton />
+          <button
+            className="control-btn"
+            onClick={onShare}
+            disabled={!current?.youtubeKey}
+            aria-label="Share trailer"
+          >
+            ⤴
+          </button>
           <button className="control-btn shuffle" onClick={onShuffle} aria-label="Shuffle">
             ⇄
           </button>
@@ -373,7 +445,29 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
         {current && (
           <>
             <h2>{current.title} {current.year ? <span className="year">({current.year})</span> : null}</h2>
+            <div className="meta-badges">
+              {Number.isFinite(current.vote_average) && current.vote_average > 0 && (
+                <span className="badge badge-rating">★ {current.vote_average.toFixed(1)}</span>
+              )}
+              {current.runtime ? <span className="badge badge-runtime">{formatRuntime(current.runtime)}</span> : null}
+              {genreNames(current.genre_ids).slice(0, 3).map((g) => (
+                <span className="badge badge-genre" key={g}>{g}</span>
+              ))}
+            </div>
             <p className="overview">{current.overview}</p>
+            {currentProviders && (currentProviders.flatrate.length > 0 || currentProviders.link) && (
+              <p className="where-to-watch">
+                {currentProviders.flatrate.length > 0
+                  ? `Streaming on ${currentProviders.flatrate.slice(0, 3).join(', ')}`
+                  : 'Where to watch'}
+                {currentProviders.link && (
+                  <>
+                    {' · '}
+                    <a href={currentProviders.link} target="_blank" rel="noreferrer">all options →</a>
+                  </>
+                )}
+              </p>
+            )}
             <div className="cycle-counter" aria-label={`${secondsLeft} seconds left`}>
               {secondsLeft}s
             </div>
@@ -383,6 +477,14 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
 
       <Filters value={filters} onChange={onFiltersChange} />
       <UpNext queue={queue.slice(1, 6)} onSelect={selectAsCurrent} />
+
+      {showSearch && (
+        <Search
+          onClose={() => setShowSearch(false)}
+          onSelectMovie={onSearchMovie}
+          onSelectPerson={onSearchPerson}
+        />
+      )}
     </div>
   );
 }

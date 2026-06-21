@@ -78,7 +78,7 @@ export default function PlayerWeb({
             else if (e.data === PlayerState.PAUSED) onPauseRef.current?.();
           },
           onError: (e) => {
-            if ([100, 101, 150].includes(e.data)) onEndedRef.current?.();
+            if ([100, 101, 150, 152].includes(e.data)) onEndedRef.current?.();
           },
         },
       });

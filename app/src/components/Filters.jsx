@@ -1,7 +1,7 @@
 /**
  * Filters — era + genre + decade selectors. Trailer Roulette's default
- * catalog is pre-2010 cinema; users can flip to "Modern" if they want
- * the current Hollywood window. Decade chips below the era toggle are
+ * catalog spans every era of cinema; users can narrow to "Classic" (pre-2010)
+ * or "Modern" (2010+) if they want. Decade chips below the era toggle are
  * scoped to the active era so the user always sees a coherent set.
  */
 import * as haptics from '../lib/haptics.js';
@@ -27,13 +27,20 @@ const GENRES = [
   { id: 37, label: 'Western' },
 ];
 
-// Pre-2010 leads, in chronological order. Modern era surfaces 2010s/2020s.
+// All eras by default; Classic = pre-2010, Modern = 2010s/2020s.
 const CLASSIC_DECADES = ['1970', '1980', '1990', '2000'];
 const MODERN_DECADES = ['2010', '2020'];
+const ALL_DECADES = ['1970', '1980', '1990', '2000', '2010', '2020'];
+
+function decadesForEra(era) {
+  if (era === 'classic') return CLASSIC_DECADES;
+  if (era === 'modern') return MODERN_DECADES;
+  return ALL_DECADES;
+}
 
 export default function Filters({ value, onChange }) {
-  const era = value.era === 'modern' ? 'modern' : 'classic';
-  const decades = era === 'classic' ? CLASSIC_DECADES : MODERN_DECADES;
+  const era = ['classic', 'modern', 'all'].includes(value.era) ? value.era : 'all';
+  const decades = decadesForEra(era);
 
   const setGenre = (id) => {
     haptics.selection();
@@ -59,6 +66,14 @@ export default function Filters({ value, onChange }) {
     <div className="filters">
       {/* Era toggle — segmented control, iOS-style */}
       <div className="era-toggle" role="tablist" aria-label="Era">
+        <button
+          className={`era-segment ${era === 'all' ? 'active' : ''}`}
+          onClick={() => setEra('all')}
+          role="tab"
+          aria-selected={era === 'all'}
+        >
+          All
+        </button>
         <button
           className={`era-segment ${era === 'classic' ? 'active' : ''}`}
           onClick={() => setEra('classic')}

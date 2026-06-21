@@ -17,8 +17,8 @@ import * as haptics from '../lib/haptics.js';
  */
 const CARDS = [
   {
-    title: 'A tour of pre-2010 cinema.',
-    body: 'Trailer Roulette spins through trailers from the 70s, 80s, 90s and 2000s — the era that built modern movies. Want something newer? Flip the Era toggle to Modern any time.',
+    title: 'Every era of cinema, shuffled.',
+    body: 'Trailer Roulette spins through movie trailers from every decade — timeless classics and brand-new releases alike. Use the Era and decade filters any time to dial in exactly what you\'re in the mood for.',
     icon: '⇄',
   },
   {

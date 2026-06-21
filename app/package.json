@@ -25,6 +25,7 @@
     "@capacitor/haptics": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
     "@capacitor/preferences": "^7.0.0",
+    "@capacitor/share": "^7.0.0",
     "airplay-plugin": "file:./local-plugins/airplay-plugin",
     "trailer-player": "file:./local-plugins/trailer-player",
     "react": "^18.3.1",

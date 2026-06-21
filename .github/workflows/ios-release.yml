@@ -64,19 +64,15 @@ jobs:
       - name: npm install
         working-directory: app
         run: npm ci
-      - name: DIAGNOSTIC � env vars at build time
+      - name: Verify build secrets are present
         env:
           VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
-          VITE_PRIVACY_POLICY_URL: ${{ vars.VITE_PRIVACY_POLICY_URL }}
         run: |
-          echo "VITE_TMDB_API_KEY length: ${#VITE_TMDB_API_KEY}"
-          echo "VITE_TMDB_API_KEY first 4 chars: $(echo -n \"$VITE_TMDB_API_KEY\" | head -c 4)"
-          echo "VITE_TMDB_API_KEY last 4 chars: $(echo -n \"$VITE_TMDB_API_KEY\" | tail -c 4)"
-          echo "VITE_PRIVACY_POLICY_URL: $VITE_PRIVACY_POLICY_URL"
           if [ -z "$VITE_TMDB_API_KEY" ]; then
-            echo "::error::VITE_TMDB_API_KEY is EMPTY at build time"
+            echo "::error::VITE_TMDB_API_KEY is empty at build time"
             exit 1
           fi
+          echo "Build secrets present."
 
       - name: Build web
         working-directory: app

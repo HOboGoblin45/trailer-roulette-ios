@@ -50,6 +50,19 @@ export default [
     },
   },
   {
+    // Local Capacitor plugins ship a small web fallback that touches
+    // browser globals (window). Give them the same environment as src/.
+    files: ['local-plugins/**/*.{js,jsx}'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
+  {
     files: ['src/**/__tests__/**/*.{js,jsx}', 'src/**/*.test.{js,jsx}'],
     languageOptions: {
       globals: {

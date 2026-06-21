@@ -1,41 +1,37 @@
-# Keywords — v1.0 final
+# Keywords — v2.0.1 (all-eras discovery)
 
-Apple's keyword field is one comma-separated string, no spaces around commas, max 100 characters total. Apple already indexes the app name, so don't repeat it.
+Apple's keyword field is one comma-separated string, no spaces around commas,
+max 100 characters. Apple already indexes the app name + subtitle, so don't
+repeat "Trailer Roulette" or obvious tokens from them.
 
-## Final string (paste this into App Store Connect)
+## Final string (live in App Store Connect)
 
 ```
-trailers,classic,vintage,80s,90s,cinephile,watchlist,movie picker,date night
+movie trailers,trailers,films,what to watch,streaming,new movies,movie night,cinema,watchlist
 ```
 
-**Character count: 76 / 100.** Twenty-four characters of headroom. The
-classic/vintage/80s/90s tokens lean into the new pre-2010 positioning;
-"shuffle" / "discover" / "roulette" come back via Apple's auto-indexing
-of the app name and subtitle.
+**Character count: 93 / 100.**
 
-## Why these and not others
-
+## Why these
 | Keyword | Reason |
 |---------|--------|
-| trailers | Primary search term; most direct intent match |
-| shuffle | Differentiator — closest to our actual UX |
-| discover | High-volume utility verb |
+| movie trailers / trailers | Primary intent; Apple matches singular/plural together |
+| films | Broad category synonym |
+| what to watch | High-volume "decide what to watch" intent — pairs with the where-to-watch feature |
+| streaming | Matches the where-to-watch feature (which surfaces streaming availability) |
+| new movies | Captures the now-included modern catalog |
+| movie night | Strong use-case keyword |
+| cinema | Category/identity term |
 | watchlist | High-intent feature term |
-| movie picker | Long-tail; matches "what should I watch" intent |
-| roulette | Brand reinforcement; novel for this category |
-| date night | Strong use-case keyword |
-| cinephile | Identity keyword for the power user |
 
-## Keywords intentionally excluded
-- **"trailer"** (singular) — Apple matches singular/plural together; including both wastes characters.
-- **"YouTube"** — 5.2 trigger.
-- **"TMDB"** — attribution is required, but as a keyword it's both a 5.2 trigger and a wasted character (low search volume from end users).
-- **"free"** — overused; ranking suppressed by Apple's algorithm.
-- Competitor names (JustWatch, Reelgood, MovieFone) — App Review will flag.
+## Notes / risk
+- "streaming" is included because the app now has a genuine **Where to watch**
+  feature (JustWatch-backed). It points to third-party services; the app does
+  not stream movies itself. If App Review ever flags it, swap "streaming" for
+  "where to watch".
+- "YouTube" and "TMDB" remain excluded (5.2 trigger / wasted characters).
+- JustWatch is required as **attribution** (in description + About), but is not
+  used as a keyword.
 
-## Reserve list (swap in if ASO data justifies)
-- "what to watch"  (15 chars — could replace cinephile + roulette)
-- "movie game"     (10 chars — replaces date night)
-- "find movies"    (11 chars — replaces movie picker)
-
-Run an ASO tool (AppTweak, Sensor Tower) after the first month and re-balance.
+## Reserve list (swap in after ASO data)
+- "where to watch" (15) · "find movies" (11) · "movie game" (10)
