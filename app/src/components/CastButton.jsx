@@ -36,8 +36,10 @@ export default function CastButton() {
       aria-label={isIOS ? 'AirPlay' : 'Cast'}
       aria-pressed={active}
     >
-      {/* Simple AirPlay glyph; replace with SVG asset in v1.1 */}
-      ⟀
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+        <polygon points="12 15 17 21 7 21 12 15" />
+      </svg>
     </button>
   );
 }

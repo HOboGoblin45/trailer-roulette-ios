@@ -19,7 +19,7 @@ const CARDS = [
   {
     title: 'Every era of cinema, shuffled.',
     body: 'Trailer Roulette spins through movie trailers from every decade — timeless classics and brand-new releases alike. Use the Era and decade filters any time to dial in exactly what you\'re in the mood for.',
-    icon: '⇄',
+    icon: '🔀',
   },
   {
     title: 'Swipe to teach the shuffle.',
