@@ -17,6 +17,18 @@ if (!API_KEY && !BEARER) {
   console.warn('[tmdb] Neither VITE_TMDB_API_KEY nor VITE_TMDB_BEARER_TOKEN is set');
 }
 
+// Small in-memory cache for per-movie lookups so re-surfacing a movie or
+// re-rendering doesn't re-hit TMDB. Cleared on app restart; no persistence.
+const _cache = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+async function cached(key, fn) {
+  const hit = _cache.get(key);
+  if (hit && (Date.now() - hit.t) < CACHE_TTL_MS) return hit.v;
+  const v = await fn();
+  _cache.set(key, { v, t: Date.now() });
+  return v;
+}
+
 async function call(path, params = {}) {
   const url = new URL(API_BASE + path);
   for (const [k, v] of Object.entries(params)) {
@@ -97,19 +109,23 @@ export function pickDiscoverPage(totalPages, max = TMDB_MAX_DISCOVER_PAGE) {
 }
 
 export async function getTrailer(movieId) {
-  const data = await call(`/movie/${movieId}/videos`);
-  const youtubeVideos = (data.results || []).filter((v) => v.site === 'YouTube');
-  // Prefer official Trailer → Teaser → Clip → anything YouTube
-  const order = ['Trailer', 'Teaser', 'Clip', 'Featurette', 'Behind the Scenes'];
-  for (const t of order) {
-    const found = youtubeVideos.find((v) => v.type === t);
-    if (found) return found;
-  }
-  return youtubeVideos[0] || null;
+  return cached(`trailer:${movieId}`, async () => {
+    const data = await call(`/movie/${movieId}/videos`);
+    const youtubeVideos = (data.results || []).filter((v) => v.site === 'YouTube');
+    // Prefer official Trailer → Teaser → Clip → anything YouTube
+    const order = ['Trailer', 'Teaser', 'Clip', 'Featurette', 'Behind the Scenes'];
+    for (const t of order) {
+      const found = youtubeVideos.find((v) => v.type === t);
+      if (found) return found;
+    }
+    return youtubeVideos[0] || null;
+  });
 }
 
 export async function getMovieDetails(movieId) {
-  return call(`/movie/${movieId}`);
+  return cached(`details:${movieId}`, async () => {
+    return call(`/movie/${movieId}`);
+  });
 }
 
 // Full TMDB movie-genre id → name map (used for genre tags on the card).
@@ -150,16 +166,18 @@ export function toTrailerCandidate(m) {
  * Returns null when no providers are listed for the region.
  */
 export async function getWatchProviders(movieId, region = 'US') {
-  const data = await call(`/movie/${movieId}/watch/providers`);
-  const r = (data.results && data.results[region]) || null;
-  if (!r) return null;
-  const names = (list) => (list || []).map((p) => p.provider_name);
-  return {
-    link: r.link || null,
-    flatrate: names(r.flatrate),
-    rent: names(r.rent),
-    buy: names(r.buy),
-  };
+  return cached(`providers:${movieId}:${region}`, async () => {
+    const data = await call(`/movie/${movieId}/watch/providers`);
+    const r = (data.results && data.results[region]) || null;
+    if (!r) return null;
+    const names = (list) => (list || []).map((p) => p.provider_name);
+    return {
+      link: r.link || null,
+      flatrate: names(r.flatrate),
+      rent: names(r.rent),
+      buy: names(r.buy),
+    };
+  });
 }
 
 /** Search movies + people in one call. Returns { movies, people } (raw TMDB objects). */

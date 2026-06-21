@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Swipe overlay — captures left/right gestures over the player.
@@ -17,6 +17,21 @@ export default function SwipeOverlay({ onSeen, onSkip, disabled }) {
   const startX = useRef(null);
   const startY = useRef(null);
   const [drag, setDrag] = useState(0);
+
+  // Keyboard accessibility: ArrowRight → Seen, ArrowLeft → Skip.
+  // Active only while enabled; ignores keystrokes aimed at form fields.
+  useEffect(() => {
+    if (disabled) return undefined;
+    const onKeyDown = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.target?.isContentEditable) return;
+      if (e.key === 'ArrowRight') onSeen?.();
+      else if (e.key === 'ArrowLeft') onSkip?.();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [disabled, onSeen, onSkip]);
 
   if (disabled) return null;
 
@@ -52,12 +67,22 @@ export default function SwipeOverlay({ onSeen, onSkip, disabled }) {
   };
   const onMouseMove = (e) => {
     if (startX.current == null) return;
-    setDrag(e.clientX - startX.current);
+    const dx = e.clientX - startX.current;
+    const dy = e.clientY - startY.current;
+    // Only engage when horizontal movement dominates, so vertical scroll
+    // (and the click that follows a drag-less press) passes through.
+    if (Math.abs(dx) > Math.abs(dy)) {
+      setDrag(dx);
+    }
   };
   const onMouseUp = () => onTouchEnd();
 
+  // Progressive feedback: fade the indicator in as the drag grows, reaching
+  // full opacity at the threshold instead of snapping in only once past it.
+  const absDrag = Math.abs(drag);
+  const indicatorOpacity = Math.min(1, absDrag / THRESHOLD);
   const indicator =
-    drag >= THRESHOLD ? '♥ Seen it' : drag <= -THRESHOLD ? '✕ Skip it' : null;
+    absDrag > 8 ? (drag > 0 ? '♥ Seen it' : '✕ Skip it') : null;
 
   return (
     <div
@@ -75,6 +100,7 @@ export default function SwipeOverlay({ onSeen, onSkip, disabled }) {
       {indicator && (
         <div
           className={`swipe-indicator ${drag > 0 ? 'right' : 'left'}`}
+          style={{ opacity: indicatorOpacity }}
         >
           {indicator}
         </div>

@@ -6,11 +6,47 @@
  *   - Privacy posture statement (echoes the hosted policy)
  */
 import { Capacitor } from '@capacitor/core';
+import { remove, KEYS } from '../lib/storage.js';
+import { confirm, alert } from '../lib/dialog.js';
 
 const VERSION = import.meta.env.VITE_APP_VERSION || '2.0.0';
 
-export default function AboutScreen({ onClose }) {
+const dataActionStyle = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'left',
+  padding: '12px 0',
+  color: '#F4F4F2',
+  background: 'transparent',
+  border: 'none',
+  borderBottom: '1px solid rgba(255,255,255,0.08)',
+  fontSize: '16px',
+  cursor: 'pointer',
+};
+
+const destructiveActionStyle = { ...dataActionStyle, color: '#FF453A' };
+
+export default function AboutScreen({ onClose, onOpenStats }) {
   const platform = Capacitor.getPlatform();
+
+  async function replayIntro() {
+    await remove(KEYS.ONBOARDED);
+    await alert('The intro will show next time you open the app.');
+  }
+
+  async function resetProfile() {
+    if (await confirm('Reset your taste profile? Your swipes so far will be forgotten.')) {
+      await remove(KEYS.TASTE_PROFILE);
+      await alert('Your taste profile has been reset.');
+    }
+  }
+
+  async function clearWatchlist() {
+    if (await confirm('Clear your entire watchlist?')) {
+      await remove(KEYS.WATCHLIST);
+      await alert('Your watchlist has been cleared.');
+    }
+  }
 
   return (
     <div className="screen about-screen">
@@ -25,6 +61,15 @@ export default function AboutScreen({ onClose }) {
         <p className="tagline">Every era of cinema, one trailer at a time.</p>
         <p className="version">v{VERSION} · {platform}</p>
       </section>
+
+      {onOpenStats && (
+        <section className="about-section">
+          <h3>Your Taste</h3>
+          <button type="button" style={dataActionStyle} onClick={onOpenStats}>
+            View your taste profile →
+          </button>
+        </section>
+      )}
 
       <section className="about-section">
         <h3>Your data</h3>
@@ -53,6 +98,19 @@ export default function AboutScreen({ onClose }) {
         <p>
           &ldquo;Where to watch&rdquo; streaming availability provided by JustWatch.
         </p>
+      </section>
+
+      <section className="about-section">
+        <h3>Manage your data</h3>
+        <button type="button" style={dataActionStyle} onClick={replayIntro}>
+          Replay intro
+        </button>
+        <button type="button" style={destructiveActionStyle} onClick={resetProfile}>
+          Reset taste profile
+        </button>
+        <button type="button" style={destructiveActionStyle} onClick={clearWatchlist}>
+          Clear watchlist
+        </button>
       </section>
 
       <section className="about-section">

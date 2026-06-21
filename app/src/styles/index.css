@@ -824,3 +824,121 @@ a { color: var(--gold); text-decoration: none; }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ═══ v2.0.4 visual polish ═══                                         */
+/* Refinements only — additive rules that override/extend the base.    */
+/* Colors use existing custom properties + low-opacity black/white      */
+/* scrims only (no new hex). Mobile-first.                              */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* 1. Controls legibility — subtle dark scrim behind the controls row
+      so white icons stay readable over bright trailer thumbnails.     */
+.player-overlay-controls {
+  align-items: center;
+  padding: 6px;
+  border-radius: 999px;
+  /* gentle vignette: transparent at the edges, slightly darker behind
+     the buttons — keeps the scrim from looking like a hard pill.      */
+  background: radial-gradient(
+    120% 120% at 70% 50%,
+    rgba(0, 0, 0, 0.34) 0%,
+    rgba(0, 0, 0, 0.18) 55%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+/* 2. Crisp, centered SVG icons + stronger button contrast/feedback.   */
+.control-btn {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.control-btn:active {
+  transform: scale(0.9);
+  background: rgba(0, 0, 0, 0.72);
+}
+.control-btn svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+/* 3. Meta badges + where-to-watch refinement.                         */
+.meta-badges {
+  gap: 6px 8px;            /* a touch more breathing room when wrapping */
+  align-items: center;
+  margin: 4px 0 10px;
+}
+.meta-badges .badge {
+  padding: 5px 10px;
+  letter-spacing: -0.01em;
+  border: 1px solid var(--hairline);
+}
+.meta-badges .badge-rating {
+  color: var(--gold);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(212, 175, 55, 0.12);  /* faint gold wash for the star */
+  border-color: rgba(212, 175, 55, 0.28);
+}
+
+.where-to-watch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 10px 0 0;
+}
+.where-to-watch a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.12);
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.where-to-watch a:active {
+  color: var(--gold-2);
+  background: rgba(212, 175, 55, 0.2);
+}
+
+/* 4. Tasteful transitions (neutralized by the reduced-motion block).  */
+.swipe-indicator {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.control-btn {
+  transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+/* 5. Intentional, contained TMDB error banner with a small filled
+      retry button instead of a full-bleed red bar.                    */
+.tmdb-error-banner {
+  margin: 12px 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: rgba(255, 69, 58, 0.12);   /* red-tinted, not solid */
+  border: 1px solid rgba(255, 69, 58, 0.32);
+  color: var(--fg);
+  gap: 12px;
+}
+.tmdb-error-banner button {
+  align-self: flex-start;
+  background: var(--danger);
+  color: #fff;
+  padding: 8px 18px;
+  min-height: 36px;
+  border-radius: 999px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.tmdb-error-banner button:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}

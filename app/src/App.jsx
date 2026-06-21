@@ -3,6 +3,7 @@ import TrailerRoulette from './components/TrailerRoulette.jsx';
 import Watchlist from './components/Watchlist.jsx';
 import AboutScreen from './components/AboutScreen.jsx';
 import Onboarding from './components/Onboarding.jsx';
+import Stats from './components/Stats.jsx';
 import { get, KEYS } from './lib/storage.js';
 
 /**
@@ -18,6 +19,7 @@ const SCREENS = {
   shuffle: 'shuffle',
   watchlist: 'watchlist',
   about: 'about',
+  stats: 'stats',
 };
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
   const goShuffle = useCallback(() => setScreen(SCREENS.shuffle), []);
   const goWatchlist = useCallback(() => setScreen(SCREENS.watchlist), []);
   const goAbout = useCallback(() => setScreen(SCREENS.about), []);
+  const goStats = useCallback(() => setScreen(SCREENS.stats), []);
   const finishOnboarding = useCallback(() => setOnboarded(true), []);
 
   return (
@@ -49,7 +52,8 @@ export default function App() {
         <TrailerRoulette onOpenWatchlist={goWatchlist} onOpenAbout={goAbout} />
       )}
       {screen === SCREENS.watchlist && <Watchlist onClose={goShuffle} />}
-      {screen === SCREENS.about && <AboutScreen onClose={goShuffle} />}
+      {screen === SCREENS.about && <AboutScreen onClose={goShuffle} onOpenStats={goStats} />}
+      {screen === SCREENS.stats && <Stats onClose={goShuffle} />}
 
       {/* Onboarding overlays the shuffle screen on first launch only. */}
       {onboarded === false && <Onboarding onDone={finishOnboarding} />}

@@ -9,12 +9,13 @@ import * as haptics from '../lib/haptics.js';
  */
 export default function Watchlist({ onClose }) {
   const [items, setItems] = useState([]);
+  const [sort, setSort] = useState('added-desc');
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const list = (await get(KEYS.WATCHLIST)) || [];
-      if (!cancelled) setItems(list.slice().reverse());
+      if (!cancelled) setItems(list);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -24,8 +25,26 @@ export default function Watchlist({ onClose }) {
     const list = (await get(KEYS.WATCHLIST)) || [];
     const next = list.filter((w) => w.id !== id);
     await set(KEYS.WATCHLIST, next);
-    setItems(next.slice().reverse());
+    setItems(next);
   };
+
+  // Derived, sorted view of the raw (chronological) list.
+  const sorted = (() => {
+    const arr = items.slice();
+    switch (sort) {
+      case 'added-asc':
+        return arr;
+      case 'title':
+        return arr.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      case 'year-desc':
+        return arr.sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0));
+      case 'year-asc':
+        return arr.sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
+      case 'added-desc':
+      default:
+        return arr.reverse();
+    }
+  })();
 
   return (
     <div className="screen watchlist-screen">
@@ -39,6 +58,32 @@ export default function Watchlist({ onClose }) {
         </span>
       </header>
 
+      {items.length > 1 && (
+        <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label htmlFor="watchlist-sort" style={{ color: '#F4F4F2', fontSize: 14 }}>Sort</label>
+          <select
+            id="watchlist-sort"
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            aria-label="Sort watchlist"
+            style={{
+              background: '#1A2440',
+              color: '#F4F4F2',
+              border: 'none',
+              borderRadius: 8,
+              padding: '6px 10px',
+              fontSize: 14,
+            }}
+          >
+            <option value="added-desc">Recently added</option>
+            <option value="added-asc">Oldest first</option>
+            <option value="title">Title A–Z</option>
+            <option value="year-desc">Newest releases first</option>
+            <option value="year-asc">Oldest releases first</option>
+          </select>
+        </div>
+      )}
+
       {items.length === 0 ? (
         <div className="empty-state">
           <p>Nothing saved yet.</p>
@@ -49,7 +94,7 @@ export default function Watchlist({ onClose }) {
         </div>
       ) : (
         <ul className="watchlist-grid">
-          {items.map((w) => (
+          {sorted.map((w) => (
             <li key={w.id}>
               <article className="watchlist-card">
                 {w.poster_path && (
