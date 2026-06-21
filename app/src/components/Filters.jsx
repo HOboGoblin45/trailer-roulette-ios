@@ -40,7 +40,8 @@ function decadesForEra(era) {
 
 export default function Filters({ value, onChange }) {
   const era = ['classic', 'modern', 'all'].includes(value.era) ? value.era : 'all';
-  const decades = decadesForEra(era);
+  const availableDecades = decadesForEra(era);
+  const selectedDecades = Array.isArray(value.decades) ? value.decades : [];
 
   const setGenre = (id) => {
     haptics.selection();
@@ -48,18 +49,21 @@ export default function Filters({ value, onChange }) {
   };
   const setDecade = (decade) => {
     haptics.selection();
-    onChange({ ...value, decade: value.decade === decade ? null : decade });
+    // Multi-select: toggle this decade in/out of the set so several can combine.
+    const next = selectedDecades.includes(decade)
+      ? selectedDecades.filter((d) => d !== decade)
+      : [...selectedDecades, decade];
+    onChange({ ...value, decades: next });
   };
   const setEra = (nextEra) => {
     if (era === nextEra) return;
     haptics.medium();
-    // Swapping era invalidates the decade pick (modern decades aren't valid
-    // in classic era and vice versa). Keep genre.
-    onChange({ ...value, era: nextEra, decade: null });
+    // Swapping era invalidates the decade picks (they're scoped to the era). Keep genre.
+    onChange({ ...value, era: nextEra, decades: [] });
   };
   const clear = () => {
     haptics.light();
-    onChange({ ...value, genre: null, decade: null });
+    onChange({ ...value, genre: null, decades: [] });
   };
 
   return (
@@ -106,18 +110,18 @@ export default function Filters({ value, onChange }) {
         ))}
       </div>
       <div className="filters-row" role="tablist" aria-label="Decade filter">
-        {decades.map((d) => (
+        {availableDecades.map((d) => (
           <button
             key={d}
-            className={`chip ${value.decade === d ? 'active' : ''}`}
+            className={`chip ${selectedDecades.includes(d) ? 'active' : ''}`}
             onClick={() => setDecade(d)}
-            role="tab"
-            aria-selected={value.decade === d}
+            role="button"
+            aria-pressed={selectedDecades.includes(d)}
           >
             {d}s
           </button>
         ))}
-        {(value.genre || value.decade) && (
+        {(value.genre || selectedDecades.length > 0) && (
           <button className="chip chip-clear" onClick={clear}>Clear</button>
         )}
       </div>

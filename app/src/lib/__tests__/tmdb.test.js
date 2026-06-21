@@ -55,10 +55,11 @@ describe('discoverMovies era windows', () => {
 
   const params = () => new URL(lastUrl).searchParams;
 
-  it('defaults to all eras — no release-date bound', async () => {
+  it('defaults to all eras — no lower bound, capped at today (no unreleased films)', async () => {
+    const today = new Date().toISOString().slice(0, 10);
     await discoverMovies({});
-    expect(params().get('primary_release_date.lte')).toBeNull();
     expect(params().get('primary_release_date.gte')).toBeNull();
+    expect(params().get('primary_release_date.lte')).toBe(today);
   });
 
   it('classic era caps results at 2009', async () => {
@@ -67,10 +68,11 @@ describe('discoverMovies era windows', () => {
     expect(params().get('primary_release_date.gte')).toBeNull();
   });
 
-  it('modern era starts at 2010', async () => {
+  it('modern era spans 2010 through today', async () => {
+    const today = new Date().toISOString().slice(0, 10);
     await discoverMovies({ era: 'modern' });
     expect(params().get('primary_release_date.gte')).toBe('2010-01-01');
-    expect(params().get('primary_release_date.lte')).toBeNull();
+    expect(params().get('primary_release_date.lte')).toBe(today);
   });
 
   it('a decade filter bounds both ends regardless of era', async () => {

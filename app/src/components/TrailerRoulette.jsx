@@ -38,7 +38,7 @@ const PREFETCH_LOOKAHEAD = 2;
 export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   // Default era is 'classic' (pre-2010). Persisted in storage so a user's
   // explicit choice survives across sessions.
-  const [filters, setFilters] = useState({ era: 'all', genre: null, decade: null });
+  const [filters, setFilters] = useState({ era: 'all', genre: null, decades: [] });
   const [queue, setQueue] = useState([]);            // upcoming trailers
   const [current, setCurrent] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -82,8 +82,14 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
 
       setProfile(storedProfile);
       if (storedFilters) {
-        // Migrate older shapes (no era field) to the all-eras default.
-        setFilters({ era: 'all', ...storedFilters });
+        // Migrate older shapes: default to all-eras and convert a legacy
+        // single `decade` into the new multi-select `decades` array.
+        const migrated = { era: 'all', genre: null, decades: [], ...storedFilters };
+        if (migrated.decade && !(migrated.decades && migrated.decades.length)) {
+          migrated.decades = [migrated.decade];
+        }
+        delete migrated.decade;
+        setFilters(migrated);
       }
       setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
       await loadQueue(storedFilters || filters, storedProfile, { fresh: true });
@@ -97,22 +103,39 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   const loadQueue = useCallback(async (f, p, { fresh = false } = {}) => {
     try {
       setLoadError(null);
-      // A "fresh" load (boot, filter change, retry) starts at page 1 — the
-      // most recognizable titles — and re-learns how many pages this filter
-      // has. A refill (queue exhausted) draws a random page from that range
-      // so the queue keeps pulling new movies instead of looping the top ~20.
-      if (fresh) totalPagesRef.current = 1;
-      const page = fresh ? 1 : pickDiscoverPage(totalPagesRef.current);
-      const data = await discoverMovies({
-        genre: f.genre,
-        decade: f.decade,
-        era: f.era || 'all',
-        page,
-      });
-      if (Number.isFinite(data.total_pages)) {
-        totalPagesRef.current = data.total_pages;
+      const decades = Array.isArray(f.decades) ? f.decades : [];
+      let candidates;
+      if (decades.length > 0) {
+        // Combine multiple specific decades: query each and merge (dedup by id).
+        // Fresh load pulls page 1 of each (recognizable); refills draw a random
+        // page per decade so the mix keeps changing.
+        const pageFor = () => (fresh ? 1 : 1 + Math.floor(Math.random() * 12));
+        const responses = await Promise.all(
+          decades.map((d) =>
+            discoverMovies({ genre: f.genre, decade: d, era: f.era || 'all', page: pageFor() })),
+        );
+        const seen = new Set();
+        candidates = responses
+          .flatMap((r) => r.results || [])
+          .filter((m) => (seen.has(m.id) ? false : seen.add(m.id)))
+          .map(toTrailerCandidate);
+        totalPagesRef.current = 1;
+      } else {
+        // Single window: page 1 on a fresh load (and learn the page count),
+        // then a random deep page on each refill so the queue keeps changing.
+        if (fresh) totalPagesRef.current = 1;
+        const page = fresh ? 1 : pickDiscoverPage(totalPagesRef.current);
+        const data = await discoverMovies({
+          genre: f.genre,
+          decade: null,
+          era: f.era || 'all',
+          page,
+        });
+        if (Number.isFinite(data.total_pages)) {
+          totalPagesRef.current = data.total_pages;
+        }
+        candidates = (data.results || []).map(toTrailerCandidate);
       }
-      const candidates = (data.results || []).map(toTrailerCandidate);
       const ordered = weightedShuffle(candidates, p);
       prefetchedRef.current = new Set(); // queue replaced, reset cache
       setQueue(ordered);

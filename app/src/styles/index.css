@@ -60,6 +60,7 @@ html, body {
   line-height: 1.4;
   overscroll-behavior-y: contain;
   -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;         /* never let a stray wide element create a sideways scroll */
 }
 
 button {
@@ -90,6 +91,11 @@ a { color: var(--gold); text-decoration: none; }
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  /* keep the last content (Up Next / filters) clear of the home indicator */
+  padding-bottom: var(--sa-bottom);
 }
 
 /* ───────── Header (iOS large-title nav-bar pattern) ───────── */
@@ -105,10 +111,10 @@ a { color: var(--gold); text-decoration: none; }
 }
 .app-header-row {
   display: grid;
-  grid-template-columns: var(--tap) 1fr var(--tap);
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   height: var(--header-h);
-  padding: 0 4px;
+  padding: 0 max(4px, var(--sa-right)) 0 max(4px, var(--sa-left));
 }
 .app-title {
   font-family: var(--font-display);

@@ -63,6 +63,7 @@ export async function discoverMovies({ genre, decade, era = 'all', page = 1 } = 
     include_adult: false,
     'vote_count.gte': era === 'modern' ? 100 : 200,
   };
+  const today = new Date().toISOString().slice(0, 10);
   if (genre) params.with_genres = genre;
   if (decade) {
     params['primary_release_date.gte'] = `${decade}-01-01`;
@@ -71,10 +72,15 @@ export async function discoverMovies({ genre, decade, era = 'all', page = 1 } = 
     // Classic: released up to and including 2009.
     params['primary_release_date.lte'] = DEFAULT_ERA_END;
   } else if (era === 'modern') {
-    // Modern: 2010 onward.
+    // Modern: 2010 through today. Capping at today excludes unreleased/future
+    // titles so the queue isn't dominated by hyped upcoming releases.
     params['primary_release_date.gte'] = '2010-01-01';
+    params['primary_release_date.lte'] = today;
+  } else {
+    // 'all' (default): everything released up to today — the cap keeps the
+    // catalog from over-indexing on not-yet-released hype.
+    params['primary_release_date.lte'] = today;
   }
-  // era === 'all' (default): no release-date bound — the full catalog.
   return call('/discover/movie', params);
 }
 
