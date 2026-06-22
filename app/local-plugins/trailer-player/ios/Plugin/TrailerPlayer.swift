@@ -371,18 +371,38 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         loadingIndicator?.startAnimating()
         // Direct HTTPS navigation. The proxy page handles the YT iframe.
         webView.load(URLRequest(url: url))
+        startWatchdog()
+    }
 
-        // Watchdog: if state=PLAYING never fires within 12s, treat this
-        // video as unplayable. Real playback starts in 2-3s normally.
+    /// Watchdog: if state=PLAYING never fires within 12s, treat this video as
+    /// unplayable. Real playback starts in 2-3s normally. A bad video mid-
+    /// session skips to the next rather than killing the whole player.
+    private func startWatchdog() {
         watchdogTimer?.invalidate()
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 12.0, repeats: false) { [weak self] _ in
             guard let self = self, !self.didFinish, !self.sawPlaying else { return }
-            // A bad video mid-session shouldn't kill the whole player —
-            // skip to the next if we have one.
             if self.nextVideoId != nil {
                 self.advanceInPlace(reason: "advanced")
             } else {
                 self.dismissUnplayable("watchdog")
+            }
+        }
+    }
+
+    /// Gapless swap (v2.9.0): ask the already-initialized proxy page to swap
+    /// the video in place via window.trLoad — no page reload, ~0.5s instead of
+    /// 2-3s. If the deployed proxy predates trLoad, fall back to a full reload
+    /// so playback always works regardless of which proxy version is live.
+    private func swapVideo(_ id: String) {
+        sawPlaying = false
+        loadingIndicator?.startAnimating()
+        let js = "(typeof window.trLoad==='function' && window.trLoad('\(id)')) ? 'ok' : 'no'"
+        webView.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self = self else { return }
+            if (result as? String) == "ok" {
+                self.startWatchdog() // gapless swap; await the new PLAYING event
+            } else {
+                self.loadVideo(videoId: id) // older proxy → reload the URL
             }
         }
     }
@@ -401,7 +421,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         // Tell JS: we advanced in place. JS shifts its queue, updates the
         // metadata panel beneath the modal, and enqueues the next key.
         onEvent("trailerEvent", ["event": reason, "from": played, "youtubeKey": next])
-        loadVideo(videoId: next)
+        swapVideo(next)
     }
 
     private func refreshSkipAffordance() {
@@ -525,9 +545,11 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
             let state = (body["state"] as? Int) ?? -99
             if state == 1 {
                 // Real playback — kill watchdog so we don't dismiss a
-                // healthy long trailer, and tell JS we started.
+                // healthy long trailer, hide any loading spinner (a gapless
+                // trLoad swap fires no navigation event), and tell JS.
                 sawPlaying = true
                 watchdogTimer?.invalidate(); watchdogTimer = nil
+                loadingIndicator?.stopAnimating()
                 onEvent("trailerEvent", ["event": "started", "youtubeKey": videoId])
             } else if state == 0 {
                 // Trailer finished. Chain in place if primed; else exit

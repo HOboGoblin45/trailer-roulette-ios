@@ -121,6 +121,26 @@ export default async function handler(request) {
     toNative({ kind: 'iframeLoaded' });
   });
 
+  // Gapless swap (v2.9.0): swap the playing video WITHOUT reloading the page.
+  // The native player calls window.trLoad('NEWID') instead of navigating to a
+  // fresh /embed?v=NEWID — the YT player is already initialized, so this is a
+  // ~0.5s in-player swap rather than a 2-3s cold page load. Older app builds
+  // that don't call this are unaffected (the page still autoplays ?v= on load).
+  var VALID = /^[A-Za-z0-9_-]{6,20}$/;
+  window.trLoad = function (id) {
+    if (!VALID.test(id || '')) return false;
+    try {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'loadVideoById', args: [String(id)] }),
+        'https://www.youtube-nocookie.com'
+      );
+      // Re-assert our event listener against the freshly-loaded video.
+      setTimeout(sendListening, 200);
+      setTimeout(sendListening, 800);
+      return true;
+    } catch (e) { return false; }
+  };
+
   // Listen for postMessages from the YT iframe and forward to native.
   // YT IFrame API messages are JSON-encoded strings with shape:
   //   { event: 'onStateChange', info: 1 }   // 1 = PLAYING, 0 = ENDED, etc.
