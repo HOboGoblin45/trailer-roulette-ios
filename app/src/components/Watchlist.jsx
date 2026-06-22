@@ -7,7 +7,7 @@ import * as haptics from '../lib/haptics.js';
  * Watchlist screen — saved trailers, sorted newest-first.
  * Empty state guides the user back to the shuffle screen.
  */
-export default function Watchlist({ onClose, onCountChange }) {
+export default function Watchlist({ onClose, onCountChange, onOpenAbout }) {
   const [items, setItems] = useState([]);
   const [sort, setSort] = useState('added-desc');
 
@@ -54,9 +54,13 @@ export default function Watchlist({ onClose, onCountChange }) {
           ◂
         </button>
         <h1>Watchlist</h1>
-        <span className="count" aria-label={`${items.length} items`}>
-          {items.length}
-        </span>
+        {onOpenAbout ? (
+          <button className="back-btn" onClick={onOpenAbout} aria-label="About" style={{ fontSize: 15 }}>
+            About
+          </button>
+        ) : (
+          <span className="count" aria-label={`${items.length} items`}>{items.length}</span>
+        )}
       </header>
 
       {items.length > 1 && (

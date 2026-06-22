@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import TrailerRoulette from './components/TrailerRoulette.jsx';
 import Onboarding from './components/Onboarding.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { get, KEYS } from './lib/storage.js';
 
 /**
@@ -28,7 +29,9 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <TrailerRoulette />
+      <ErrorBoundary>
+        <TrailerRoulette />
+      </ErrorBoundary>
       {onboarded === false && <Onboarding onDone={finishOnboarding} />}
     </div>
   );

@@ -11,7 +11,6 @@ import {
 import { uniformShuffle } from '../lib/shuffleWeighting.js';
 import { loadProfile, recordReaction, decay, saveProfile } from '../lib/tasteProfile.js';
 import { get, set, KEYS } from '../lib/storage.js';
-import { shareTrailer } from '../lib/share.js';
 import * as airplay from '../lib/airplay.js';
 import * as haptics from '../lib/haptics.js';
 
@@ -51,30 +50,62 @@ export default function TrailerRoulette() {
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
   const unplayableKeysRef = useRef(new Set());
+  const retryRef = useRef({ timer: null, attempt: 0 });
+  const toppingRef = useRef(false);
+  const loadQueueRef = useRef(null);
 
   // Build an era-diverse batch (old + mid + recent), then shuffle uniformly so
   // the order is pure random. Stratified sampling is what keeps the feed from
   // over-indexing on recent blockbusters. Falls back to a plain deep-page pull
   // if the mix comes back thin.
-  const loadQueue = useCallback(async () => {
+  const loadQueue = useCallback(async ({ append = false } = {}) => {
     try {
-      setLoadError(null);
+      if (!append) setLoadError(null);
       let results = await discoverRandomMix();
       if (!results || results.length < 8) {
         const data = await discoverMovies({ era: 'all', page: pickDiscoverPage(500) });
         results = [...(results || []), ...(data.results || [])];
       }
-      const candidates = results.map(toTrailerCandidate);
-      const ordered = uniformShuffle(candidates);
-      prefetchedRef.current = new Set();
-      setQueue(ordered);
-      if (ordered.length > 0) await selectAsCurrent(ordered[0]);
+      const ordered = uniformShuffle(results.map(toTrailerCandidate));
+      // Success → clear any pending retry/backoff.
+      retryRef.current.attempt = 0;
+      clearTimeout(retryRef.current.timer);
+
+      if (append) {
+        // Top-up: append fresh, de-duped movies without disturbing playback.
+        setQueue((q) => {
+          const have = new Set(q.map((m) => m.id));
+          return [...q, ...ordered.filter((m) => !have.has(m.id))];
+        });
+      } else {
+        prefetchedRef.current = new Set();
+        setQueue(ordered);
+        if (ordered.length > 0) await selectAsCurrent(ordered[0]);
+      }
     } catch (err) {
       console.error('[TrailerRoulette] loadQueue failed', err);
-      setLoadError(err?.message || String(err));
+      if (!append) setLoadError(err?.message || String(err));
+      // Self-heal: retry with capped exponential backoff so the feed comes
+      // back on its own the moment the network does — no user action needed.
+      const attempt = Math.min(retryRef.current.attempt + 1, 6);
+      retryRef.current.attempt = attempt;
+      const delay = Math.min(1000 * 2 ** (attempt - 1), 30000);
+      clearTimeout(retryRef.current.timer);
+      retryRef.current.timer = setTimeout(() => loadQueueRef.current?.({ append }), delay);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  loadQueueRef.current = loadQueue;
+
+  // Clean up any pending retry timer on unmount.
+  useEffect(() => () => clearTimeout(retryRef.current.timer), []);
+
+  // Keep the queue topped up so it never runs dry mid-session.
+  useEffect(() => {
+    if (!current || queue.length > 4 || toppingRef.current) return;
+    toppingRef.current = true;
+    loadQueue({ append: true }).finally(() => { toppingRef.current = false; });
+  }, [queue.length, current, loadQueue]);
 
   // Boot: load taste profile (for swipe history) + watchlist, then the queue.
   useEffect(() => {
@@ -113,10 +144,10 @@ export default function TrailerRoulette() {
         console.warn('[TrailerRoulette] getTrailer failed', e);
       }
     }
-    // Skip movies with no trailer or a known-unplayable key (auto-skip up to 5
+    // Skip movies with no trailer or a known-unplayable key (auto-skip up to 8
     // deep) so the user never lands on a dead card.
     const keyKnownBad = next.youtubeKey && unplayableKeysRef.current.has(next.youtubeKey);
-    if ((!next.youtubeKey || keyKnownBad) && depth < 5) {
+    if ((!next.youtubeKey || keyKnownBad) && depth < 8) {
       setQueue((q) => {
         const rest = q.slice(1);
         if (rest[0]) selectAsCurrent(rest[0], depth + 1);
@@ -280,12 +311,6 @@ export default function TrailerRoulette() {
     try { await airplay.presentRoutePicker(); } catch { /* noop */ }
   }, []);
 
-  const onShare = useCallback(() => {
-    if (!current?.youtubeKey) return;
-    haptics.light();
-    shareTrailer({ title: current.title, youtubeKey: current.youtubeKey });
-  }, [current]);
-
   const saved = current ? watchlistIds.has(current.id) : false;
   const providers = currentProviders;
   const hasWhereToWatch = providers && (providers.flatrate.length > 0 || providers.link);
@@ -329,18 +354,17 @@ export default function TrailerRoulette() {
                 <span className="tr-badge tr-badge-rating">★ {current.vote_average.toFixed(1)}</span>
               )}
               {current.runtime ? <span className="tr-badge">{formatRuntime(current.runtime)}</span> : null}
-              {genreNames(current.genre_ids).slice(0, 3).map((g) => (
+              {genreNames(current.genre_ids).slice(0, 2).map((g) => (
                 <span className="tr-badge" key={g}>{g}</span>
               ))}
             </div>
-            <p className="tr-overview">{current.overview}</p>
             {hasWhereToWatch && (
               <p className="tr-watch">
                 {providers.flatrate.length > 0
-                  ? `Streaming on ${providers.flatrate.slice(0, 3).join(', ')}`
+                  ? `Streaming on ${providers.flatrate.slice(0, 2).join(', ')}`
                   : 'Where to watch'}
                 {providers.link && (
-                  <>{' · '}<a href={providers.link} target="_blank" rel="noreferrer">all options →</a></>
+                  <>{' · '}<a href={providers.link} target="_blank" rel="noreferrer">options →</a></>
                 )}
               </p>
             )}
@@ -348,28 +372,14 @@ export default function TrailerRoulette() {
         )}
       </SwipeCard>
 
-      {/* Floating top bar. */}
+      {/* Minimal top: just the watchlist (with count). About lives inside it. */}
       <div className="tr-topbar">
-        <button className="tr-glyph" onClick={() => { haptics.light(); setShowAbout(true); }} aria-label="About">
+        <button className="tr-glyph" onClick={() => { haptics.light(); setShowWatchlist(true); }} aria-label="Watchlist">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><circle cx="12" cy="7.5" r="0.6" fill="currentColor" stroke="none" />
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
+          {watchlistIds.size > 0 && <span className="tr-glyph-badge">{watchlistIds.size}</span>}
         </button>
-        <span className="tr-brand">Trailer&nbsp;<b>Roulette</b></span>
-        <div className="tr-topbar-right">
-          <button className="tr-glyph" onClick={onShare} aria-label="Share" disabled={!current?.youtubeKey}>
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-              <path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
-            </svg>
-          </button>
-          <button className="tr-glyph" onClick={() => { haptics.light(); setShowWatchlist(true); }} aria-label="Watchlist">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-            {watchlistIds.size > 0 && <span className="tr-glyph-badge">{watchlistIds.size}</span>}
-          </button>
-        </div>
       </div>
 
       {/* Dating-app action row: ✕ skip · AirPlay · ♥ save. The swipe gesture
@@ -404,7 +414,12 @@ export default function TrailerRoulette() {
         </div>
       )}
 
-      {showWatchlist && <Watchlist onClose={() => setShowWatchlist(false)} />}
+      {showWatchlist && (
+        <Watchlist
+          onClose={() => setShowWatchlist(false)}
+          onOpenAbout={() => { setShowWatchlist(false); setShowAbout(true); }}
+        />
+      )}
       {showAbout && <AboutScreen onClose={() => setShowAbout(false)} />}
     </div>
   );

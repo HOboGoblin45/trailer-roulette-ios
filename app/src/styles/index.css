@@ -1328,9 +1328,11 @@ html, body { height: 100%; background: #000; }
 /* Floating top bar. */
 .tr-topbar {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: max(env(safe-area-inset-top), 12px) 14px 14px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%);
+  display: flex; align-items: center; justify-content: flex-end;
+  /* Always clear the Dynamic Island / notch even if the webview reports a
+     zero safe-area inset (Capacitor contentInset can swallow it). */
+  padding: max(env(safe-area-inset-top, 0px), 52px) 14px 14px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 100%);
   pointer-events: none;
 }
 .tr-topbar > * { pointer-events: auto; }
