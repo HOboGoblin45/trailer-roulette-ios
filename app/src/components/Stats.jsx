@@ -14,10 +14,10 @@ import { get, KEYS } from '../lib/storage.js';
 
 // Palette (matches the app's dark theme; .screen already paints var(--bg)).
 const COLORS = {
-  text: '#F4F4F2',
-  textDim: '#C4CCDC',
-  gold: '#D4AF37',
-  surface: '#1A2440',
+  text: 'var(--fg)',
+  textDim: 'var(--fg-2)',
+  gold: 'var(--gold)',
+  surface: 'var(--bg-2)',
   radius: 14,
 };
 
@@ -157,7 +157,7 @@ export default function Stats({ onClose }) {
         {!personalizing && (
           <div
             style={{
-              background: 'rgba(212, 175, 55, 0.12)',
+              background: 'var(--bg-2)',
               border: `1px solid ${COLORS.gold}`,
               borderRadius: COLORS.radius,
               padding: '12px 16px',

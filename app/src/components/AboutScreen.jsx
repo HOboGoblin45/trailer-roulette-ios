@@ -16,15 +16,15 @@ const dataActionStyle = {
   width: '100%',
   textAlign: 'left',
   padding: '12px 0',
-  color: '#F4F4F2',
+  color: 'var(--fg)',
   background: 'transparent',
   border: 'none',
-  borderBottom: '1px solid rgba(255,255,255,0.08)',
+  borderBottom: '1px solid var(--hairline)',
   fontSize: '16px',
   cursor: 'pointer',
 };
 
-const destructiveActionStyle = { ...dataActionStyle, color: '#FF453A' };
+const destructiveActionStyle = { ...dataActionStyle, color: 'var(--danger)' };
 
 export default function AboutScreen({ onClose, onOpenStats }) {
   const platform = Capacitor.getPlatform();

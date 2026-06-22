@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: 'always',
     scrollEnabled: true,
-    backgroundColor: '#0E1726', // dark navy — matches launch screen
+    backgroundColor: '#FFFFFF', // light theme (white + light blue)
     limitsNavigationsToAppBoundDomains: false,
     preferredContentMode: 'mobile',
     handleApplicationNotifications: false,

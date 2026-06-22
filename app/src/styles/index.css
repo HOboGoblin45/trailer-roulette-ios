@@ -1043,3 +1043,148 @@ body {
 /* Screens fade/slide in */
 .screen { animation: trRise 0.4s cubic-bezier(0.2,0.7,0.2,1) both; }
 .up-next { border-top: 1px solid rgba(255,255,255,0.06); }
+
+/* ═══════════ v2.2 LIGHT THEME (white + light blue) + TAB BAR ═══════════ */
+
+/* Light palette — overrides the dark tokens defined at the top of the file. */
+:root {
+  --bg: #FFFFFF;
+  --bg-2: #EEF4FC;          /* light blue-tinted surface */
+  --bg-3: #DCE8F7;          /* deeper light blue surface */
+  --fg: #0F1722;            /* near-black primary text */
+  --fg-2: #51607A;          /* secondary */
+  --fg-dim: #8A97AB;        /* tertiary */
+  --gold: #3DA5F4;          /* repurposed as the light-blue accent */
+  --gold-2: #2C8FE0;        /* pressed accent */
+  --danger: #FF3B30;
+  --success: #34C759;
+  --hairline: rgba(15,23,34,0.08);
+  --hairline-strong: rgba(15,23,34,0.16);
+}
+
+/* Canvas: white with a faint light-blue wash up top for depth. */
+body {
+  background: linear-gradient(180deg, #E8F2FE 0%, #FFFFFF 32%);
+  background-attachment: fixed;
+  color: var(--fg);
+}
+/* Fixed-height shell so the tab bar stays pinned and .tab-content scrolls inside it */
+html, body { height: 100%; }
+#root { height: 100%; min-height: 100%; }
+.app-shell { background: transparent; padding-bottom: 0; height: 100%; }
+
+/* Header — light, glassy. */
+.app-header {
+  background: rgba(255,255,255,0.82);
+  border-bottom: 1px solid var(--hairline);
+}
+.app-title { color: var(--fg); }
+.app-title .accent { color: var(--gold); font-style: normal; font-family: var(--font-display); }
+.header-btn { color: var(--gold); }
+.header-side { display: flex; align-items: center; gap: 4px; min-width: var(--tap); }
+.header-side.header-right { justify-content: flex-end; }
+.watchlist-btn .badge { color: #fff; background: var(--gold); }
+
+/* Player stays a black stage; overlay controls remain dark-glass + white icons
+   (legible over any video) — intentionally NOT re-themed. Blend it into the page. */
+.player-wrap::after {
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.32) 62%, var(--bg) 100%);
+}
+
+/* Play button: light-blue, white label, soft blue glow (no pulse on light). */
+.player-play-button {
+  background: var(--gold);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18), 0 10px 30px rgba(61,165,244,0.36);
+  animation: none;
+}
+.player-play-button:disabled { background: var(--bg-3); color: var(--fg-dim); box-shadow: none; }
+
+/* Meta on white */
+.meta h2, .meta .overview { color: inherit; }
+.meta-badges .badge { background: var(--bg-2); border: 1px solid var(--hairline); color: var(--fg-2); }
+.meta-badges .badge-rating { color: var(--gold); background: rgba(61,165,244,0.12); border-color: rgba(61,165,244,0.4); }
+.where-to-watch { color: var(--fg-2); }
+.where-to-watch a { color: var(--gold); background: rgba(61,165,244,0.12); }
+.cycle-counter { color: var(--fg-dim); }
+
+/* Era toggle + chips on white */
+.era-toggle { background: var(--bg-2); border: 1px solid var(--hairline); }
+.era-segment { color: var(--fg-2); }
+.era-segment.active { background: var(--gold); color: #fff; }
+.chip { background: var(--bg-2); border: 1px solid var(--hairline); color: var(--fg-2); }
+.chip.active { background: rgba(61,165,244,0.14); border-color: rgba(61,165,244,0.5); color: var(--gold); }
+.chip.chip-clear { color: var(--fg-dim); }
+
+/* Screens / Up Next on white */
+.screen { background: var(--bg); }
+.screen-header { background: var(--bg); border-bottom: 1px solid var(--hairline); }
+.screen-header h1 { color: var(--fg); }
+.filters-screen, .watchlist-screen, .about-screen, .stats-screen, .search-screen { background: var(--bg); }
+.back-btn, .screen-header .count { color: var(--gold); }
+.up-next { background: var(--bg); border-top: 1px solid var(--hairline); }
+.handle-label { color: var(--fg-2); }
+.up-next-title { color: var(--fg); }
+.up-next-title small { color: var(--fg-dim); }
+.empty-state { color: var(--fg-2); }
+.empty-state .cta { background: var(--gold); color: #fff; }
+.about-section h2, .about-section h3, .tagline { color: var(--fg); }
+.about-section p, .version { color: var(--fg-2); }
+.watchlist-meta h2 { color: var(--fg); }
+.watchlist-card { background: var(--bg-2); }
+.remove-btn { color: var(--danger); }
+
+/* ── Bottom tab bar ── */
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.tab-bar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: rgba(255,255,255,0.94);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid var(--hairline);
+  padding-bottom: var(--sa-bottom);
+  padding-left: var(--sa-left);
+  padding-right: var(--sa-right);
+}
+.tab-bar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 0 5px;
+  min-width: 0;
+  min-height: 0;
+  color: var(--fg-dim);
+  background: transparent;
+  transition: color 0.15s ease;
+}
+.tab-bar-item.active { color: var(--gold); }
+.tab-bar-icon { position: relative; display: flex; }
+.tab-bar-label { font-size: 10px; font-weight: 600; }
+.tab-bar-badge {
+  position: absolute;
+  top: -5px; right: -9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 16px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  text-align: center;
+}
+
+/* Filters tab spacing + a text "Done" button */
+.filters-screen .filters { padding-top: 4px; }
+.filters-screen .screen-header .back-btn { width: auto; padding: 0 8px; font-size: 16px; font-weight: 600; }

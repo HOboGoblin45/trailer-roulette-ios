@@ -7,7 +7,7 @@ import * as haptics from '../lib/haptics.js';
  * Watchlist screen — saved trailers, sorted newest-first.
  * Empty state guides the user back to the shuffle screen.
  */
-export default function Watchlist({ onClose }) {
+export default function Watchlist({ onClose, onCountChange }) {
   const [items, setItems] = useState([]);
   const [sort, setSort] = useState('added-desc');
 
@@ -15,10 +15,10 @@ export default function Watchlist({ onClose }) {
     let cancelled = false;
     (async () => {
       const list = (await get(KEYS.WATCHLIST)) || [];
-      if (!cancelled) setItems(list);
+      if (!cancelled) { setItems(list); onCountChange?.(list.length); }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [onCountChange]);
 
   const remove = async (id) => {
     haptics.medium();
@@ -26,6 +26,7 @@ export default function Watchlist({ onClose }) {
     const next = list.filter((w) => w.id !== id);
     await set(KEYS.WATCHLIST, next);
     setItems(next);
+    onCountChange?.(next.length);
   };
 
   // Derived, sorted view of the raw (chronological) list.
@@ -60,16 +61,16 @@ export default function Watchlist({ onClose }) {
 
       {items.length > 1 && (
         <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label htmlFor="watchlist-sort" style={{ color: '#F4F4F2', fontSize: 14 }}>Sort</label>
+          <label htmlFor="watchlist-sort" style={{ color: 'var(--fg-2)', fontSize: 14 }}>Sort</label>
           <select
             id="watchlist-sort"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
             aria-label="Sort watchlist"
             style={{
-              background: '#1A2440',
-              color: '#F4F4F2',
-              border: 'none',
+              background: 'var(--bg-2)',
+              color: 'var(--fg)',
+              border: '1px solid var(--hairline)',
               borderRadius: 8,
               padding: '6px 10px',
               fontSize: 14,

@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import Header from './Header.jsx';
 import Player from './Player.jsx';
-import Filters from './Filters.jsx';
 import UpNext from './UpNext.jsx';
 import SwipeOverlay from './SwipeOverlay.jsx';
 import CastButton from './CastButton.jsx';
@@ -35,10 +34,7 @@ const DEFAULT_CYCLE_SECONDS = 90;
 // enough to cover the gap between cycles even if the user is rapid-skipping.
 const PREFETCH_LOOKAHEAD = 2;
 
-export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
-  // Default era is 'classic' (pre-2010). Persisted in storage so a user's
-  // explicit choice survives across sessions.
-  const [filters, setFilters] = useState({ era: 'all', genre: null, decades: [] });
+export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
   const [queue, setQueue] = useState([]);            // upcoming trailers
   const [current, setCurrent] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -70,8 +66,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   useEffect(() => {
     let cancelled = false;
     async function boot() {
-      const [storedFilters, storedProfileRaw, watchlist] = await Promise.all([
-        get(KEYS.FILTERS),
+      const [storedProfileRaw, watchlist] = await Promise.all([
         loadProfile(),
         get(KEYS.WATCHLIST),
       ]);
@@ -81,23 +76,22 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
       await saveProfile(storedProfile);
 
       setProfile(storedProfile);
-      if (storedFilters) {
-        // Migrate older shapes: default to all-eras and convert a legacy
-        // single `decade` into the new multi-select `decades` array.
-        const migrated = { era: 'all', genre: null, decades: [], ...storedFilters };
-        if (migrated.decade && !(migrated.decades && migrated.decades.length)) {
-          migrated.decades = [migrated.decade];
-        }
-        delete migrated.decade;
-        setFilters(migrated);
-      }
       setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
-      await loadQueue(storedFilters || filters, storedProfile, { fresh: true });
+      await loadQueue(filters, storedProfile, { fresh: true });
     }
     boot();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Reload the queue when filters change (edited on the Filters tab). Skips the
+  // first mount — boot() handles the initial load.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return; }
+    loadQueue(filters, profile, { fresh: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
 
   // Load queue whenever filters change.
   const loadQueue = useCallback(async (f, p, { fresh = false } = {}) => {
@@ -355,12 +349,6 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
     }
   }, [queue, profile, selectAsCurrent]);
 
-  const onFiltersChange = useCallback(async (next) => {
-    setFilters(next);
-    await set(KEYS.FILTERS, next);
-    await loadQueue(next, profile, { fresh: true });
-  }, [profile, loadQueue]);
-
   const toggleWatchlist = useCallback(async () => {
     if (!current) return;
     const inList = watchlistIds.has(current.id);
@@ -380,7 +368,8 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
     }
     await set(KEYS.WATCHLIST, nextList);
     setWatchlistIds(new Set(nextList.map((w) => w.id)));
-  }, [current, watchlistIds]);
+    onWatchlistCountChange?.(nextList.length);
+  }, [current, watchlistIds, onWatchlistCountChange]);
 
   const onShare = useCallback(() => {
     if (!current?.youtubeKey) return;
@@ -413,10 +402,7 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
   return (
     <div className="trailer-roulette">
       <Header
-        onOpenWatchlist={onOpenWatchlist}
-        onOpenAbout={onOpenAbout}
         onOpenSearch={() => { haptics.light(); setShowSearch(true); }}
-        watchlistCount={watchlistIds.size}
         cycleProgress={(cycleSeconds - secondsLeft) / cycleSeconds}
       />
 
@@ -508,7 +494,6 @@ export default function TrailerRoulette({ onOpenWatchlist, onOpenAbout }) {
         )}
       </div>
 
-      <Filters value={filters} onChange={onFiltersChange} />
       <UpNext queue={queue.slice(1, 6)} onSelect={selectAsCurrent} />
 
       {showSearch && (
