@@ -1418,3 +1418,75 @@ html, body { height: 100%; background: #000; }
   position: absolute; top: 50%; left: 16px; right: 16px; z-index: 7;
   transform: translateY(-50%);
 }
+
+/* ═══════════ v2.6 TINDER swipe card ═══════════ */
+/* The trailer is a card you drag like a dating app: left to skip, right to
+   save, tap to play. Floating ✕ / AirPlay / ♥ row mirrors the gestures. */
+
+.tr-card {
+  position: absolute; inset: 0; z-index: 1;
+  will-change: transform;
+  transform-origin: center 120%;
+}
+.tr-card.is-animating {
+  transition: transform 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Transparent gesture layer over the video (leaves the info zone tappable). */
+.tr-capture {
+  position: absolute; left: 0; right: 0; top: 0; bottom: 150px;
+  z-index: 2; touch-action: none; cursor: grab;
+}
+.tr-capture:active { cursor: grabbing; }
+
+/* SAVE / SKIP stamps, Tinder-style. */
+.tr-stamp {
+  position: absolute; top: 92px; z-index: 4; pointer-events: none;
+  font-size: 32px; font-weight: 900; letter-spacing: 3px; text-transform: uppercase;
+  padding: 5px 14px; border-radius: 12px; border: 4px solid currentColor;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.35);
+}
+.tr-stamp-like { left: 22px; color: #34D27B; transform: rotate(-15deg); }
+.tr-stamp-nope { right: 22px; color: #FF4E5B; transform: rotate(15deg); }
+
+/* Movie info, inside the card so it swipes with the video. */
+.tr-cardinfo {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  padding: 70px 18px calc(env(safe-area-inset-bottom, 0px) + 108px);
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 42%, rgba(0,0,0,0.92) 100%);
+  pointer-events: none;
+  animation: trInfoIn 0.34s ease both;
+}
+.tr-cardinfo > * { pointer-events: auto; }
+@keyframes trInfoIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.tr-cardinfo h2 {
+  font-size: 23px; font-weight: 800; line-height: 1.12; margin: 0 0 9px;
+  letter-spacing: -0.02em; text-shadow: 0 1px 6px rgba(0,0,0,0.65);
+}
+
+/* Top bar right cluster (share + watchlist). */
+.tr-topbar-right { display: flex; align-items: center; gap: 8px; }
+
+/* Dating-app action row. */
+.tr-actions {
+  position: absolute; left: 0; right: 0; z-index: 6;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  display: flex; align-items: center; justify-content: center; gap: 24px;
+  pointer-events: none;
+}
+.tr-actions > * { pointer-events: auto; }
+.tr-act {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; border-radius: 50%; cursor: pointer;
+  background: #15171E; color: #fff; border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.45);
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+.tr-act:active { transform: scale(0.9); }
+.tr-act:disabled { opacity: 0.4; }
+.tr-act-nope, .tr-act-like { width: 66px; height: 66px; }
+.tr-act-nope { color: #FF4E5B; }
+.tr-act-like { color: #34D27B; }
+.tr-act-like.is-on { background: #34D27B; color: #fff; }
+.tr-act-air { width: 56px; height: 56px; color: var(--gold); }
+.tr-act-air span { font-size: 9px; font-weight: 700; letter-spacing: 0.02em; margin-top: 1px; }

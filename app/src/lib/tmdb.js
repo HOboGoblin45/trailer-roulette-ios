@@ -123,13 +123,23 @@ function randInt(min, max) {
  * stay high enough to keep titles recognizable. Page ranges are wider for
  * recent years (deeper catalogs) than for sparse early ones.
  */
-export const CATALOG_START_YEAR = 1972;
+export const CATALOG_START_YEAR = 1970;
 
+/**
+ * One band per decade. Sampling a random year from EACH decade (rather than one
+ * year across a huge band) means a single batch spans ~6 different decades with
+ * no two movies clumped on the same year — the feed feels random across all of
+ * cinema. Vote floors rise for newer decades (more films, more ratings) so older
+ * picks stay recognizable without demanding modern vote counts.
+ */
 export function eraStrata(currentYear = new Date().getFullYear()) {
   return [
-    { lo: CATALOG_START_YEAR, hi: 1994, voteFloor: 60, maxPage: 3 },
-    { lo: 1995, hi: 2011, voteFloor: 120, maxPage: 5 },
-    { lo: 2012, hi: currentYear, voteFloor: 150, maxPage: 7 },
+    { lo: CATALOG_START_YEAR, hi: 1979, voteFloor: 40, maxPage: 2 },
+    { lo: 1980, hi: 1989, voteFloor: 60, maxPage: 3 },
+    { lo: 1990, hi: 1999, voteFloor: 90, maxPage: 3 },
+    { lo: 2000, hi: 2009, voteFloor: 130, maxPage: 4 },
+    { lo: 2010, hi: 2019, voteFloor: 180, maxPage: 5 },
+    { lo: 2020, hi: currentYear, voteFloor: 150, maxPage: 5 },
   ];
 }
 

@@ -29,6 +29,7 @@ export default function PlayerIOS({
   trailer,
   nextTrailer,
   isPlaying,
+  playSignal,
   onPlay,
   onPause,
   onEnded,
@@ -47,6 +48,15 @@ export default function PlayerIOS({
 
   // Reset error when the trailer changes.
   useEffect(() => { setError(null); }, [trailer?.youtubeKey]);
+
+  // A tap on the swipe card bumps playSignal — start playback (the card
+  // covers our own Play button, so taps are routed through here).
+  useEffect(() => {
+    if (!playSignal) return;
+    if (openingRef.current || !trailer?.youtubeKey) return;
+    openTrailer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playSignal]);
 
   // Subscribe once to native in-place lifecycle events.
   useEffect(() => {

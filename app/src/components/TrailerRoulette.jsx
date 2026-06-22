@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import Player from './Player.jsx';
-import SwipeOverlay from './SwipeOverlay.jsx';
+import SwipeCard from './SwipeCard.jsx';
 import Watchlist from './Watchlist.jsx';
 import AboutScreen from './AboutScreen.jsx';
 import {
@@ -45,7 +45,9 @@ export default function TrailerRoulette() {
   const [showWatchlist, setShowWatchlist] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [currentProviders, setCurrentProviders] = useState(null);
+  const [playSignal, setPlaySignal] = useState(0);
 
+  const swipeRef = useRef(null);
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
   const unplayableKeysRef = useRef(new Set());
@@ -243,8 +245,35 @@ export default function TrailerRoulette() {
     setSecondsLeft(s);
   }, []);
 
-  const onSeen = useCallback(() => { haptics.medium(); advance('seen'); }, [advance]);
-  const onSkip = useCallback(() => { haptics.medium(); advance('skip'); }, [advance]);
+  // Idempotently add the current movie to the watchlist (swipe-right / ♥).
+  const saveCurrent = useCallback(async () => {
+    if (!current) return;
+    const watchlist = (await get(KEYS.WATCHLIST)) || [];
+    if (watchlist.some((w) => w.id === current.id)) return;
+    const nextList = [...watchlist, {
+      id: current.id, title: current.title, year: current.year,
+      poster_path: current.poster_path, addedAt: new Date().toISOString(),
+    }];
+    await set(KEYS.WATCHLIST, nextList);
+    setWatchlistIds(new Set(nextList.map((w) => w.id)));
+  }, [current]);
+
+  // Tinder gestures: swipe right = save + next, swipe left = skip.
+  const onLike = useCallback(() => { haptics.medium(); saveCurrent(); advance('seen'); }, [saveCurrent, advance]);
+  const onNope = useCallback(() => { haptics.medium(); advance('skip'); }, [advance]);
+  const onTapPlay = useCallback(() => { setPlaySignal((n) => n + 1); }, []);
+
+  // Keyboard parity for web QA: ← skip, → save.
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+      if (e.key === 'ArrowRight') swipeRef.current?.fling('like');
+      else if (e.key === 'ArrowLeft') swipeRef.current?.fling('nope');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const onAirPlay = useCallback(async () => {
     haptics.medium();
@@ -255,21 +284,6 @@ export default function TrailerRoulette() {
     if (!current?.youtubeKey) return;
     haptics.light();
     shareTrailer({ title: current.title, youtubeKey: current.youtubeKey });
-  }, [current]);
-
-  const toggleWatchlist = useCallback(async () => {
-    if (!current) return;
-    haptics.medium();
-    const watchlist = (await get(KEYS.WATCHLIST)) || [];
-    const inList = watchlist.some((w) => w.id === current.id);
-    const nextList = inList
-      ? watchlist.filter((w) => w.id !== current.id)
-      : [...watchlist, {
-          id: current.id, title: current.title, year: current.year,
-          poster_path: current.poster_path, addedAt: new Date().toISOString(),
-        }];
-    await set(KEYS.WATCHLIST, nextList);
-    setWatchlistIds(new Set(nextList.map((w) => w.id)));
   }, [current]);
 
   const saved = current ? watchlistIds.has(current.id) : false;
@@ -283,65 +297,32 @@ export default function TrailerRoulette() {
         <span style={{ transform: `scaleX(${Math.max(0, Math.min(1, (cycleSeconds - secondsLeft) / cycleSeconds))})` }} />
       </div>
 
-      {/* Full-bleed video / backdrop stage. */}
-      <div className="player-wrap">
-        <SwipeOverlay onSeen={onSeen} onSkip={onSkip} disabled={!current} />
-        <Player
-          trailer={current}
-          nextTrailer={queue[1]}
-          isPlaying={isPlaying}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={onTrailerEnded}
-          onAdvanceInPlace={onAdvanceInPlace}
-          onDurationKnown={onTrailerDurationKnown}
-        />
-      </div>
+      {/* The swipeable trailer card: full-bleed video + its info. Drag it like
+          a dating-app card — left to skip, right to save. */}
+      <SwipeCard
+        ref={swipeRef}
+        disabled={!current}
+        onLike={onLike}
+        onNope={onNope}
+        onTap={onTapPlay}
+        resetKey={current?.id ?? 'empty'}
+      >
+        <div className="player-wrap">
+          <Player
+            trailer={current}
+            nextTrailer={queue[1]}
+            isPlaying={isPlaying}
+            playSignal={playSignal}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={onTrailerEnded}
+            onAdvanceInPlace={onAdvanceInPlace}
+            onDurationKnown={onTrailerDurationKnown}
+          />
+        </div>
 
-      {/* Floating top bar. */}
-      <div className="tr-topbar">
-        <button className="tr-glyph" onClick={() => { haptics.light(); setShowAbout(true); }} aria-label="About">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><circle cx="12" cy="7.5" r="0.6" fill="currentColor" stroke="none" />
-          </svg>
-        </button>
-        <span className="tr-brand">Trailer&nbsp;<b>Roulette</b></span>
-        <button className="tr-glyph" onClick={() => { haptics.light(); setShowWatchlist(true); }} aria-label="Watchlist">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-          </svg>
-          {watchlistIds.size > 0 && <span className="tr-glyph-badge">{watchlistIds.size}</span>}
-        </button>
-      </div>
-
-      {/* Right action rail — save / AirPlay / share. */}
-      <div className="tr-rail">
-        <button className={`tr-rail-btn${saved ? ' is-on' : ''}`} onClick={toggleWatchlist} aria-label={saved ? 'Saved' : 'Save'} disabled={!current}>
-          <svg viewBox="0 0 24 24" width="26" height="26" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 1 0-7.8 7.8l1.1 1L12 21l7.7-7.6 1.1-1a5.5 5.5 0 0 0 0-7.8z" />
-          </svg>
-          <span>Save</span>
-        </button>
-        <button className="tr-rail-btn" onClick={onAirPlay} aria-label="AirPlay">
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
-            <polygon points="12 15 17 21 7 21 12 15" fill="currentColor" stroke="none" />
-          </svg>
-          <span>AirPlay</span>
-        </button>
-        <button className="tr-rail-btn" onClick={onShare} aria-label="Share" disabled={!current?.youtubeKey}>
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-            <path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
-          </svg>
-          <span>Share</span>
-        </button>
-      </div>
-
-      {/* Bottom scrim — movie info + the hero Skip control. */}
-      <div className="tr-bottom">
         {current && (
-          <div className="tr-meta">
+          <div className="tr-cardinfo" key={current.id}>
             <h2>{current.title}{current.year ? <span className="tr-year"> {current.year}</span> : null}</h2>
             <div className="tr-badges">
               {Number.isFinite(current.vote_average) && current.vote_average > 0 && (
@@ -365,12 +346,50 @@ export default function TrailerRoulette() {
             )}
           </div>
         )}
+      </SwipeCard>
 
-        <button className="tr-skip" onClick={onSkip} aria-label="Skip to next trailer" disabled={!current}>
-          <span>Skip</span>
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <polygon points="5 4 15 12 5 20 5 4" fill="currentColor" stroke="none" />
-            <line x1="19" y1="5" x2="19" y2="19" />
+      {/* Floating top bar. */}
+      <div className="tr-topbar">
+        <button className="tr-glyph" onClick={() => { haptics.light(); setShowAbout(true); }} aria-label="About">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><circle cx="12" cy="7.5" r="0.6" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+        <span className="tr-brand">Trailer&nbsp;<b>Roulette</b></span>
+        <div className="tr-topbar-right">
+          <button className="tr-glyph" onClick={onShare} aria-label="Share" disabled={!current?.youtubeKey}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
+            </svg>
+          </button>
+          <button className="tr-glyph" onClick={() => { haptics.light(); setShowWatchlist(true); }} aria-label="Watchlist">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            {watchlistIds.size > 0 && <span className="tr-glyph-badge">{watchlistIds.size}</span>}
+          </button>
+        </div>
+      </div>
+
+      {/* Dating-app action row: ✕ skip · AirPlay · ♥ save. The swipe gesture
+          does the same; these are the tap-to-decide shortcuts. */}
+      <div className="tr-actions">
+        <button className="tr-act tr-act-nope" onClick={() => swipeRef.current?.fling('nope')} aria-label="Skip" disabled={!current}>
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+            <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+          </svg>
+        </button>
+        <button className="tr-act tr-act-air" onClick={onAirPlay} aria-label="AirPlay to TV">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+            <polygon points="12 15 17 21 7 21 12 15" fill="currentColor" stroke="none" />
+          </svg>
+          <span>AirPlay</span>
+        </button>
+        <button className={`tr-act tr-act-like${saved ? ' is-on' : ''}`} onClick={() => swipeRef.current?.fling('like')} aria-label="Save" disabled={!current}>
+          <svg viewBox="0 0 24 24" width="30" height="30" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 1 0-7.8 7.8l1.1 1L12 21l7.7-7.6 1.1-1a5.5 5.5 0 0 0 0-7.8z" />
           </svg>
         </button>
       </div>
