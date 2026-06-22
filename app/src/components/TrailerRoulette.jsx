@@ -6,10 +6,9 @@ import Watchlist from './Watchlist.jsx';
 import AboutScreen from './AboutScreen.jsx';
 import {
   discoverMovies, discoverRandomMix, getTrailer, getMovieDetails, pickDiscoverPage,
-  getWatchProviders, toTrailerCandidate, genreNames,
+  getWatchProviders, toTrailerCandidate, genreNames, backdropUrl, posterUrl,
 } from '../lib/tmdb.js';
 import { uniformShuffle } from '../lib/shuffleWeighting.js';
-import { loadProfile, recordReaction, decay, saveProfile } from '../lib/tasteProfile.js';
 import { get, set, KEYS } from '../lib/storage.js';
 import * as airplay from '../lib/airplay.js';
 import * as haptics from '../lib/haptics.js';
@@ -107,19 +106,12 @@ export default function TrailerRoulette() {
     loadQueue({ append: true }).finally(() => { toppingRef.current = false; });
   }, [queue.length, current, loadQueue]);
 
-  // Boot: load taste profile (for swipe history) + watchlist, then the queue.
+  // Boot: load the saved watchlist, then the queue.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [storedProfileRaw, watchlist] = await Promise.all([
-        loadProfile(),
-        get(KEYS.WATCHLIST),
-      ]);
+      const watchlist = await get(KEYS.WATCHLIST);
       if (cancelled) return;
-      // Decay the stored taste profile and persist it (swipe history is still
-      // recorded for the About → reset control), but the feed itself is now
-      // pure-random, so nothing reads the profile into render state.
-      await saveProfile(decay(storedProfileRaw));
       setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
       await loadQueue();
     })();
@@ -237,36 +229,28 @@ export default function TrailerRoulette() {
     return () => { cancelled = true; try { sub?.remove?.(); } catch { /* noop */ } };
   }, [current?.youtubeKey]);
 
-  const advance = useCallback(async (reaction = null) => {
-    if (current && reaction) {
-      await recordReaction(current, reaction); // persists swipe history
-    }
+  const advance = useCallback(() => {
     setQueue((q) => {
       const [, ...rest] = q;
       if (rest[0]) selectAsCurrent(rest[0]);
       else loadQueue().catch(() => {}); // exhausted → fetch more
       return rest;
     });
-  }, [current, loadQueue, selectAsCurrent]);
+  }, [loadQueue, selectAsCurrent]);
 
   const onTrailerEnded = useCallback((payload) => {
     haptics.light();
     if (payload?.unplayable && payload?.youtubeKey) {
       unplayableKeysRef.current.add(payload.youtubeKey);
-      advance(null);
-      return;
     }
-    const reason = String(payload?.reason || '');
-    if (reason === 'ended') advance('seen');
-    else if (reason === 'skip') advance('skip');
-    else advance(null);
+    advance();
   }, [advance]);
 
   // Native chained to the next trailer in place (continuous playback). Keep
   // the JS queue + metadata panel in sync without reopening the player.
-  const onAdvanceInPlace = useCallback((reaction) => {
+  const onAdvanceInPlace = useCallback(() => {
     haptics.light();
-    advance(reaction);
+    advance();
   }, [advance]);
 
   const onTrailerDurationKnown = useCallback((duration) => {
@@ -290,8 +274,8 @@ export default function TrailerRoulette() {
   }, [current]);
 
   // Tinder gestures: swipe right = save + next, swipe left = skip.
-  const onLike = useCallback(() => { haptics.medium(); saveCurrent(); advance('seen'); }, [saveCurrent, advance]);
-  const onNope = useCallback(() => { haptics.medium(); advance('skip'); }, [advance]);
+  const onLike = useCallback(() => { haptics.medium(); saveCurrent(); advance(); }, [saveCurrent, advance]);
+  const onNope = useCallback(() => { haptics.medium(); advance(); }, [advance]);
   const onTapPlay = useCallback(() => { setPlaySignal((n) => n + 1); }, []);
 
   // Keyboard parity for web QA: ← skip, → save.
@@ -314,6 +298,9 @@ export default function TrailerRoulette() {
   const saved = current ? watchlistIds.has(current.id) : false;
   const providers = currentProviders;
   const hasWhereToWatch = providers && (providers.flatrate.length > 0 || providers.link);
+  const currentArt = current ? (backdropUrl(current.backdrop_path) || posterUrl(current.poster_path)) : null;
+  const next = queue[1];
+  const nextArt = next ? (backdropUrl(next.backdrop_path) || posterUrl(next.poster_path)) : null;
 
   return (
     <div className="tr-stage">
@@ -321,6 +308,12 @@ export default function TrailerRoulette() {
       <div className="tr-progress" aria-hidden="true">
         <span style={{ transform: `scaleX(${Math.max(0, Math.min(1, (cycleSeconds - secondsLeft) / cycleSeconds))})` }} />
       </div>
+
+      {/* Peek of the next trailer, sitting behind the current card so a swipe
+          reveals something already there — never a black void. */}
+      {nextArt && (
+        <div className="tr-next" aria-hidden="true" style={{ backgroundImage: `url("${nextArt}")` }} />
+      )}
 
       {/* The swipeable trailer card: full-bleed video + its info. Drag it like
           a dating-app card — left to skip, right to save. */}
@@ -332,6 +325,10 @@ export default function TrailerRoulette() {
         onTap={onTapPlay}
         resetKey={current?.id ?? 'empty'}
       >
+        {/* Instant backdrop so the stage is never black while the trailer loads. */}
+        {currentArt && (
+          <div className="tr-backdrop" aria-hidden="true" style={{ backgroundImage: `url("${currentArt}")` }} />
+        )}
         <div className="player-wrap">
           <Player
             trailer={current}

@@ -94,11 +94,8 @@ describe('storage (web/localStorage path)', () => {
 describe('KEYS', () => {
   it('exposes all the well-known storage keys', () => {
     expect(KEYS.WATCHLIST).toBe('trailer-roulette.watchlist');
-    expect(KEYS.SEEN_LIST).toBe('trailer-roulette.seen');
-    expect(KEYS.TASTE_PROFILE).toBe('trailer-roulette.taste-profile');
-    expect(KEYS.FILTERS).toBe('trailer-roulette.filters');
-    expect(KEYS.SHUFFLE_STRENGTH).toBe('trailer-roulette.shuffle-strength');
     expect(KEYS.ONBOARDED).toBe('trailer-roulette.onboarded');
+    expect(KEYS.ERROR_LOG).toBe('trailer-roulette.error-log');
   });
 
   it('is frozen (cannot be mutated at runtime)', () => {

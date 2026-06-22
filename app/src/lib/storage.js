@@ -53,9 +53,6 @@ function safeParse(value) {
 
 export const KEYS = Object.freeze({
   WATCHLIST: 'trailer-roulette.watchlist',
-  SEEN_LIST: 'trailer-roulette.seen',
-  TASTE_PROFILE: 'trailer-roulette.taste-profile',
-  FILTERS: 'trailer-roulette.filters',
-  SHUFFLE_STRENGTH: 'trailer-roulette.shuffle-strength', // 0..1; default 0.6
   ONBOARDED: 'trailer-roulette.onboarded',
+  ERROR_LOG: 'trailer-roulette.error-log',
 });

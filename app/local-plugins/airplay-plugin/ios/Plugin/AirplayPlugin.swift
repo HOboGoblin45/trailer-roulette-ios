@@ -29,7 +29,7 @@ public class AirplayPlugin: CAPPlugin {
                 picker = existing
             } else {
                 picker = AVRoutePickerView(frame: .zero)
-                picker.activeTintColor = UIColor(red: 0.83, green: 0.69, blue: 0.22, alpha: 1.0) // gold
+                picker.activeTintColor = UIColor(red: 0.239, green: 0.647, blue: 0.957, alpha: 1.0) // light-blue #3DA5F4
                 picker.tintColor = .white
                 picker.prioritizesVideoDevices = true
                 picker.isHidden = true

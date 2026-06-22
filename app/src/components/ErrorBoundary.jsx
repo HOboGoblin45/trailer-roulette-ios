@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { recordError } from '../lib/errorLog.js';
 
 /**
  * ErrorBoundary — the "runs no matter what" backstop.
@@ -22,6 +23,7 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     // Log for diagnostics; never rethrow.
     console.error('[ErrorBoundary] recovered from', error, info?.componentStack);
+    recordError('render', error?.message || String(error), error?.stack || info?.componentStack);
     // Auto-heal: clear the error after a beat so the subtree re-mounts fresh.
     clearTimeout(this._timer);
     this._timer = setTimeout(() => this.reset(), 2500);

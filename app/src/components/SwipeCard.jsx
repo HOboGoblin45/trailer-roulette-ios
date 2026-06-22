@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import * as haptics from '../lib/haptics.js';
 
 /**
  * SwipeCard — a Tinder-style draggable card.
@@ -41,6 +42,7 @@ const SwipeCard = forwardRef(function SwipeCard(
   useEffect(() => () => clearTimeout(flingTimer.current), []);
 
   const commit = (dir) => {
+    haptics.medium();
     setAnimating(true);
     setDx(dir === 'like' ? window.innerWidth * 1.3 : -window.innerWidth * 1.3);
     clearTimeout(flingTimer.current);

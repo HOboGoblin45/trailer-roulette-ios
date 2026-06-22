@@ -26,19 +26,12 @@ const dataActionStyle = {
 
 const destructiveActionStyle = { ...dataActionStyle, color: 'var(--danger)' };
 
-export default function AboutScreen({ onClose, onOpenStats }) {
+export default function AboutScreen({ onClose }) {
   const platform = Capacitor.getPlatform();
 
   async function replayIntro() {
     await remove(KEYS.ONBOARDED);
     await alert('The intro will show next time you open the app.');
-  }
-
-  async function resetProfile() {
-    if (await confirm('Reset your taste profile? Your swipes so far will be forgotten.')) {
-      await remove(KEYS.TASTE_PROFILE);
-      await alert('Your taste profile has been reset.');
-    }
   }
 
   async function clearWatchlist() {
@@ -61,15 +54,6 @@ export default function AboutScreen({ onClose, onOpenStats }) {
         <p className="tagline">Every era of cinema, one trailer at a time.</p>
         <p className="version">v{VERSION} · {platform}</p>
       </section>
-
-      {onOpenStats && (
-        <section className="about-section">
-          <h3>Your Taste</h3>
-          <button type="button" style={dataActionStyle} onClick={onOpenStats}>
-            View your taste profile →
-          </button>
-        </section>
-      )}
 
       <section className="about-section">
         <h3>Your data</h3>
@@ -104,9 +88,6 @@ export default function AboutScreen({ onClose, onOpenStats }) {
         <h3>Manage your data</h3>
         <button type="button" style={dataActionStyle} onClick={replayIntro}>
           Replay intro
-        </button>
-        <button type="button" style={destructiveActionStyle} onClick={resetProfile}>
-          Reset taste profile
         </button>
         <button type="button" style={destructiveActionStyle} onClick={clearWatchlist}>
           Clear watchlist

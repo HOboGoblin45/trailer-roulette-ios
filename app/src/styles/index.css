@@ -1492,3 +1492,23 @@ html, body { height: 100%; background: #000; }
 .tr-act-like.is-on { background: #34D27B; color: #fff; }
 .tr-act-air { width: 56px; height: 56px; color: var(--gold); }
 .tr-act-air span { font-size: 9px; font-weight: 700; letter-spacing: 0.02em; margin-top: 1px; }
+
+/* ═══════════ v2.8 instant backdrop + next-card peek ═══════════ */
+/* The video stage is transparent so the movie's backdrop shows the instant a
+   card appears — no black void while the trailer loads/buffers. */
+.tr-stage .player-wrap { background: transparent; }
+
+.tr-backdrop {
+  position: absolute; inset: 0; z-index: 0;
+  background-size: cover; background-position: center;
+  filter: brightness(0.6) saturate(1.05);
+  animation: trInfoIn 0.4s ease both;
+}
+
+/* The next trailer's art, peeking behind the current card. */
+.tr-next {
+  position: absolute; inset: 0; z-index: 0;
+  background-size: cover; background-position: center;
+  filter: brightness(0.32) saturate(0.9) blur(2px);
+  transform: scale(0.96);
+}
