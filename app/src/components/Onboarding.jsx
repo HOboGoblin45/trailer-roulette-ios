@@ -54,14 +54,14 @@ export default function Onboarding({ onDone }) {
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'var(--bg, #FFFFFF)',
+        background: 'radial-gradient(120% 90% at 50% 0%, #14161C 0%, #07080B 70%)',
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
-        color: 'var(--fg, #0F1722)',
+        color: '#F5F6F8',
       }}
     >
       {/* Skip button — top-right. */}
@@ -73,11 +73,11 @@ export default function Onboarding({ onDone }) {
           top: 'max(env(safe-area-inset-top), 16px)',
           right: 16,
           background: 'transparent',
-          color: 'var(--fg, #0F1722)',
+          color: '#F5F6F8',
           border: 'none',
           padding: 12,
           fontSize: 14,
-          opacity: 0.6,
+          opacity: 0.7,
           cursor: 'pointer',
         }}
       >
@@ -133,7 +133,7 @@ export default function Onboarding({ onDone }) {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              background: i === step ? 'var(--gold, #3DA5F4)' : 'rgba(15, 23, 34, 0.2)',
+              background: i === step ? 'var(--gold, #3DA5F4)' : 'rgba(255, 255, 255, 0.25)',
               transition: 'background 200ms ease',
             }}
           />

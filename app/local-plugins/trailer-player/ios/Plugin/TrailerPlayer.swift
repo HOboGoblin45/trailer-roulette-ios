@@ -189,12 +189,12 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     private var watchdogTimer: Timer?
     private var sawPlaying = false
 
-    // Light theme to match the app (white header, light-blue accents,
-    // black video stage — video always looks best on black).
+    // Immersive dark theme to match the full-bleed video feed: black stage +
+    // header (controls float over the video), white title, light-blue accents.
     private static let stageColor = UIColor.black
-    private static let headerColor = UIColor.white
+    private static let headerColor = UIColor.black
     private static let accentColor = UIColor(red: 0.239, green: 0.647, blue: 0.957, alpha: 1.0) // #3DA5F4
-    private static let titleColor = UIColor(red: 0.059, green: 0.090, blue: 0.133, alpha: 1.0)  // #0F1722
+    private static let titleColor = UIColor(red: 0.961, green: 0.961, blue: 0.961, alpha: 1.0)  // near-white
 
     /// The Vercel proxy host — verified third-party origin that YouTube
     /// accepts as a legitimate embedder. Anything else here = player
@@ -254,7 +254,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     }
 
     override var prefersStatusBarHidden: Bool { true }
-    override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
+    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         [.portrait, .landscapeLeft, .landscapeRight]
     }

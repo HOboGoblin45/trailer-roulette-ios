@@ -108,6 +108,58 @@ export function pickDiscoverPage(totalPages, max = TMDB_MAX_DISCOVER_PAGE) {
   return Math.floor(Math.random() * cap) + 1;
 }
 
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/**
+ * The era bands we sample from. The whole point: `sort_by=popularity.desc`
+ * collapses the catalog onto recent blockbusters, so a random *page* is still
+ * mostly modern. Instead we sample a random *year* from each band and pull a
+ * random page within that year — guaranteeing every batch spans old, mid, and
+ * recent cinema rather than over-indexing on the last few years.
+ *
+ * Vote floors fall off for older bands (fewer ratings exist for old films) but
+ * stay high enough to keep titles recognizable. Page ranges are wider for
+ * recent years (deeper catalogs) than for sparse early ones.
+ */
+export const CATALOG_START_YEAR = 1972;
+
+export function eraStrata(currentYear = new Date().getFullYear()) {
+  return [
+    { lo: CATALOG_START_YEAR, hi: 1994, voteFloor: 60, maxPage: 3 },
+    { lo: 1995, hi: 2011, voteFloor: 120, maxPage: 5 },
+    { lo: 2012, hi: currentYear, voteFloor: 150, maxPage: 7 },
+  ];
+}
+
+/**
+ * Build a genuinely era-diverse batch of candidate movies. Pulls one random
+ * year from each era band (in parallel), merges, and de-dupes. A single failed
+ * band degrades gracefully — the others still fill the batch. If everything
+ * comes back thin, the caller can fall back to plain discoverMovies.
+ */
+export async function discoverRandomMix({ strata } = {}) {
+  const bands = strata || eraStrata();
+  const groups = await Promise.all(
+    bands.map((s) => {
+      const year = randInt(s.lo, s.hi);
+      const page = randInt(1, s.maxPage);
+      return call('/discover/movie', {
+        sort_by: 'popularity.desc',
+        page,
+        include_adult: false,
+        'vote_count.gte': s.voteFloor,
+        primary_release_year: year,
+      })
+        .then((d) => d.results || [])
+        .catch(() => []);
+    })
+  );
+  const seen = new Set();
+  return [].concat(...groups).filter((m) => m && !seen.has(m.id) && seen.add(m.id));
+}
+
 export async function getTrailer(movieId) {
   return cached(`trailer:${movieId}`, async () => {
     const data = await call(`/movie/${movieId}/videos`);

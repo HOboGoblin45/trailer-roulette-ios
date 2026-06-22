@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: 'always',
     scrollEnabled: true,
-    backgroundColor: '#FFFFFF', // light theme (white + light blue)
+    backgroundColor: '#000000', // immersive dark video stage
     limitsNavigationsToAppBoundDomains: false,
     preferredContentMode: 'mobile',
     handleApplicationNotifications: false,

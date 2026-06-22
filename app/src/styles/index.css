@@ -1046,26 +1046,27 @@ body {
 
 /* ═══════════ v2.2 LIGHT THEME (white + light blue) + TAB BAR ═══════════ */
 
-/* Light palette — overrides the dark tokens defined at the top of the file. */
+/* Dark palette for the immersive build — deep neutral surfaces with the
+   light-blue accent. Secondary screens (Watchlist, About, Stats) read from
+   these so the whole app matches the black video stage. */
 :root {
-  --bg: #FFFFFF;
-  --bg-2: #EEF4FC;          /* light blue-tinted surface */
-  --bg-3: #DCE8F7;          /* deeper light blue surface */
-  --fg: #0F1722;            /* near-black primary text */
-  --fg-2: #51607A;          /* secondary */
-  --fg-dim: #8A97AB;        /* tertiary */
-  --gold: #3DA5F4;          /* repurposed as the light-blue accent */
+  --bg: #07080B;            /* near-black canvas */
+  --bg-2: #16181F;          /* elevated surface */
+  --bg-3: #21242D;          /* secondary surface */
+  --fg: #F5F6F8;            /* near-white primary text */
+  --fg-2: #AEB6C4;          /* secondary */
+  --fg-dim: #7B8494;        /* tertiary */
+  --gold: #3DA5F4;          /* light-blue accent */
   --gold-2: #2C8FE0;        /* pressed accent */
-  --danger: #FF3B30;
+  --danger: #FF453A;
   --success: #34C759;
-  --hairline: rgba(15,23,34,0.08);
-  --hairline-strong: rgba(15,23,34,0.16);
+  --hairline: rgba(255,255,255,0.10);
+  --hairline-strong: rgba(255,255,255,0.18);
 }
 
-/* Canvas: white with a faint light-blue wash up top for depth. */
+/* Canvas: solid black behind the immersive stage. */
 body {
-  background: linear-gradient(180deg, #E8F2FE 0%, #FFFFFF 32%);
-  background-attachment: fixed;
+  background: #000;
   color: var(--fg);
 }
 /* Fixed-height shell so the tab bar stays pinned and .tab-content scrolls inside it */
@@ -1251,3 +1252,169 @@ html, body { height: 100%; }
   box-shadow: 0 6px 18px rgba(61,165,244,0.35);
 }
 .ta-skip svg polygon { fill: #fff; }
+
+/* ═══════════ v2.5 IMMERSIVE full-bleed video feed ═══════════ */
+/* The trailer fills the screen on a cinematic black stage. Controls float
+   over the video; movie info lives in a bottom gradient scrim. This overrides
+   the v2.2/v2.3 light card layout for the main screen. */
+
+html, body { height: 100%; background: #000; }
+#root { min-height: 100svh; }
+.app-shell { height: 100svh; background: #000; }
+
+.tr-stage {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100svh;
+  min-height: 0;
+  background: #000;
+  color: #fff;
+  overflow: hidden;
+  font-family: var(--font, -apple-system, system-ui, sans-serif);
+}
+
+/* Full-bleed stage — kill the 16:9 box and the blend-to-page gradient. */
+.tr-stage .player-wrap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  flex: none;
+  background: #000;
+  border-radius: 0;
+  box-shadow: none;
+  z-index: 0;
+}
+.tr-stage .player-wrap::after { display: none; }
+.tr-stage .player,
+.tr-stage .player-web,
+.tr-stage .player-ios { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tr-stage .player-web > div { width: 100% !important; height: 100% !important; }
+.tr-stage .player-ios .player-backdrop {
+  filter: blur(0) brightness(0.82) saturate(108%);
+  transform: scale(1.02);
+}
+
+/* Big glassy circular play button (iOS card state). */
+.tr-stage .player-play-button {
+  width: 86px; height: 86px;
+  padding: 0; border-radius: 50%;
+  flex-direction: column; gap: 0;
+  background: rgba(255,255,255,0.18);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1.5px solid rgba(255,255,255,0.55);
+  color: #fff;
+  box-shadow: 0 10px 34px rgba(0,0,0,0.55);
+  animation: none;
+}
+.tr-stage .player-play-button .play-icon { font-size: 30px; margin-left: 5px; }
+.tr-stage .player-play-button .play-label { display: none; }
+.tr-stage .player-play-button:disabled { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); }
+.tr-stage .player-hint { color: rgba(255,255,255,0.85); text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
+
+/* Top progress hairline for the current trailer. */
+.tr-progress {
+  position: absolute; top: 0; left: 0; right: 0; height: 2.5px;
+  background: rgba(255,255,255,0.16); z-index: 6;
+}
+.tr-progress span {
+  display: block; height: 100%; width: 100%;
+  background: var(--gold); transform-origin: left center;
+  transform: scaleX(0); transition: transform 0.5s linear;
+}
+
+/* Floating top bar. */
+.tr-topbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: max(env(safe-area-inset-top), 12px) 14px 14px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%);
+  pointer-events: none;
+}
+.tr-topbar > * { pointer-events: auto; }
+.tr-brand { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.95); letter-spacing: -0.01em; text-shadow: 0 1px 4px rgba(0,0,0,0.55); }
+.tr-brand b { color: var(--gold); font-weight: 800; }
+.tr-glyph {
+  position: relative; width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; border-radius: 50%;
+  background: rgba(0,0,0,0.32);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  transition: transform 0.1s ease;
+}
+.tr-glyph:active { transform: scale(0.9); }
+.tr-glyph-badge {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  background: var(--gold); color: #fff; font-size: 11px; font-weight: 700;
+  border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid #000;
+}
+
+/* Right action rail. */
+.tr-rail {
+  position: absolute; right: 8px; z-index: 5;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 132px);
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+}
+.tr-rail-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  color: #fff; background: transparent; border: 0; cursor: pointer;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  transition: transform 0.1s ease, color 0.15s ease;
+}
+.tr-rail-btn svg { filter: drop-shadow(0 1px 5px rgba(0,0,0,0.6)); }
+.tr-rail-btn span { font-size: 11px; font-weight: 600; letter-spacing: 0.01em; }
+.tr-rail-btn:active { transform: scale(0.88); }
+.tr-rail-btn.is-on { color: var(--gold); }
+.tr-rail-btn:disabled { opacity: 0.4; }
+
+/* Bottom scrim — movie info + hero Skip. */
+.tr-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 64px 16px max(env(safe-area-inset-bottom), 14px);
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 38%, rgba(0,0,0,0.9) 100%);
+  pointer-events: none;
+}
+.tr-bottom > * { pointer-events: auto; }
+.tr-meta { padding-right: 60px; }
+.tr-meta h2 {
+  font-size: 23px; font-weight: 800; line-height: 1.12; margin: 0 0 9px;
+  letter-spacing: -0.02em; text-shadow: 0 1px 6px rgba(0,0,0,0.65);
+}
+.tr-year { font-weight: 500; opacity: 0.7; }
+.tr-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+.tr-badge {
+  font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+  background: rgba(255,255,255,0.18); color: #fff;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.tr-badge-rating { background: var(--gold); color: #fff; }
+.tr-overview {
+  font-size: 13.5px; line-height: 1.45; margin: 0 0 6px;
+  color: rgba(255,255,255,0.88); text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tr-watch { font-size: 12.5px; color: rgba(255,255,255,0.72); margin: 0; }
+.tr-watch a { color: var(--gold); }
+
+.tr-skip {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; height: 54px; border-radius: 999px;
+  background: var(--gold); color: #fff; cursor: pointer; border: 0;
+  font-size: 17px; font-weight: 700; letter-spacing: -0.01em;
+  box-shadow: 0 8px 24px rgba(61,165,244,0.45);
+  transition: transform 0.1s ease, opacity 0.12s ease;
+}
+.tr-skip:active { transform: scale(0.98); }
+.tr-skip:disabled { opacity: 0.45; box-shadow: none; }
+.tr-skip svg polygon { fill: #fff; }
+.tr-skip svg line { stroke: #fff; }
+
+.tr-stage .tmdb-error-banner {
+  position: absolute; top: 50%; left: 16px; right: 16px; z-index: 7;
+  transform: translateY(-50%);
+}

@@ -1,12 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import Header from './Header.jsx';
 import Player from './Player.jsx';
 import SwipeOverlay from './SwipeOverlay.jsx';
 import Watchlist from './Watchlist.jsx';
 import AboutScreen from './AboutScreen.jsx';
 import {
-  discoverMovies, getTrailer, getMovieDetails, pickDiscoverPage,
+  discoverMovies, discoverRandomMix, getTrailer, getMovieDetails, pickDiscoverPage,
   getWatchProviders, toTrailerCandidate, genreNames,
 } from '../lib/tmdb.js';
 import { uniformShuffle } from '../lib/shuffleWeighting.js';
@@ -36,7 +35,6 @@ const PREFETCH_LOOKAHEAD = 3;
 export default function TrailerRoulette() {
   const [queue, setQueue] = useState([]);
   const [current, setCurrent] = useState(null);
-  const [profile, setProfile] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(DEFAULT_CYCLE_SECONDS);
   const [cycleSeconds, setCycleSeconds] = useState(DEFAULT_CYCLE_SECONDS);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -51,17 +49,20 @@ export default function TrailerRoulette() {
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
   const unplayableKeysRef = useRef(new Set());
-  const totalPagesRef = useRef(1);
 
-  // Pull a page of every-era movies and shuffle uniformly (pure random order).
-  const loadQueue = useCallback(async (p, { fresh = false } = {}) => {
+  // Build an era-diverse batch (old + mid + recent), then shuffle uniformly so
+  // the order is pure random. Stratified sampling is what keeps the feed from
+  // over-indexing on recent blockbusters. Falls back to a plain deep-page pull
+  // if the mix comes back thin.
+  const loadQueue = useCallback(async () => {
     try {
       setLoadError(null);
-      if (fresh) totalPagesRef.current = 1;
-      const page = fresh ? 1 : pickDiscoverPage(totalPagesRef.current);
-      const data = await discoverMovies({ era: 'all', page });
-      if (Number.isFinite(data.total_pages)) totalPagesRef.current = data.total_pages;
-      const candidates = (data.results || []).map(toTrailerCandidate);
+      let results = await discoverRandomMix();
+      if (!results || results.length < 8) {
+        const data = await discoverMovies({ era: 'all', page: pickDiscoverPage(500) });
+        results = [...(results || []), ...(data.results || [])];
+      }
+      const candidates = results.map(toTrailerCandidate);
       const ordered = uniformShuffle(candidates);
       prefetchedRef.current = new Set();
       setQueue(ordered);
@@ -82,11 +83,12 @@ export default function TrailerRoulette() {
         get(KEYS.WATCHLIST),
       ]);
       if (cancelled) return;
-      const storedProfile = decay(storedProfileRaw);
-      await saveProfile(storedProfile);
-      setProfile(storedProfile);
+      // Decay the stored taste profile and persist it (swipe history is still
+      // recorded for the About → reset control), but the feed itself is now
+      // pure-random, so nothing reads the profile into render state.
+      await saveProfile(decay(storedProfileRaw));
       setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
-      await loadQueue(storedProfile, { fresh: true });
+      await loadQueue();
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,9 +96,9 @@ export default function TrailerRoulette() {
 
   const handleRetry = useCallback(async () => {
     setRetrying(true);
-    try { await loadQueue(profile, { fresh: true }); }
+    try { await loadQueue(); }
     finally { setRetrying(false); }
-  }, [profile, loadQueue]);
+  }, [loadQueue]);
 
   const selectAsCurrent = useCallback(async (trailer, depth = 0) => {
     let next = trailer;
@@ -204,16 +206,15 @@ export default function TrailerRoulette() {
 
   const advance = useCallback(async (reaction = null) => {
     if (current && reaction) {
-      const updated = await recordReaction(current, reaction);
-      setProfile(updated);
+      await recordReaction(current, reaction); // persists swipe history
     }
     setQueue((q) => {
       const [, ...rest] = q;
       if (rest[0]) selectAsCurrent(rest[0]);
-      else loadQueue(profile).catch(() => {}); // exhausted → fetch more
+      else loadQueue().catch(() => {}); // exhausted → fetch more
       return rest;
     });
-  }, [current, profile, loadQueue, selectAsCurrent]);
+  }, [current, loadQueue, selectAsCurrent]);
 
   const onTrailerEnded = useCallback((payload) => {
     haptics.light();
@@ -272,26 +273,17 @@ export default function TrailerRoulette() {
   }, [current]);
 
   const saved = current ? watchlistIds.has(current.id) : false;
+  const providers = currentProviders;
+  const hasWhereToWatch = providers && (providers.flatrate.length > 0 || providers.link);
 
   return (
-    <div className="trailer-roulette">
-      <Header
-        onOpenWatchlist={() => { haptics.light(); setShowWatchlist(true); }}
-        onOpenAbout={() => { haptics.light(); setShowAbout(true); }}
-        watchlistCount={watchlistIds.size}
-        cycleProgress={(cycleSeconds - secondsLeft) / cycleSeconds}
-      />
+    <div className="tr-stage">
+      {/* Thin progress line for the current trailer (web cycle timer). */}
+      <div className="tr-progress" aria-hidden="true">
+        <span style={{ transform: `scaleX(${Math.max(0, Math.min(1, (cycleSeconds - secondsLeft) / cycleSeconds))})` }} />
+      </div>
 
-      {loadError && (
-        <div className="tmdb-error-banner">
-          <div><strong>Couldn&apos;t load trailers.</strong></div>
-          <div style={{ fontSize: 12, opacity: 0.85 }}>{loadError}</div>
-          <button onClick={handleRetry} disabled={retrying}>
-            {retrying ? 'Retrying…' : 'Try again'}
-          </button>
-        </div>
-      )}
-
+      {/* Full-bleed video / backdrop stage. */}
       <div className="player-wrap">
         <SwipeOverlay onSeen={onSeen} onSkip={onSkip} disabled={!current} />
         <Player
@@ -306,63 +298,92 @@ export default function TrailerRoulette() {
         />
       </div>
 
-      {/* Primary actions — AirPlay and Skip are the heroes; save/share are quiet. */}
-      <div className="trailer-actions">
-        <button className="ta-icon" onClick={toggleWatchlist} aria-label={saved ? 'Remove from watchlist' : 'Save to watchlist'} disabled={!current}>
-          <span style={{ fontSize: 22, lineHeight: 1 }}>{saved ? '♥' : '♡'}</span>
-        </button>
-
-        <button className="ta-big ta-airplay" onClick={onAirPlay} aria-label="AirPlay to TV">
+      {/* Floating top bar. */}
+      <div className="tr-topbar">
+        <button className="tr-glyph" onClick={() => { haptics.light(); setShowAbout(true); }} aria-label="About">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><circle cx="12" cy="7.5" r="0.6" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+        <span className="tr-brand">Trailer&nbsp;<b>Roulette</b></span>
+        <button className="tr-glyph" onClick={() => { haptics.light(); setShowWatchlist(true); }} aria-label="Watchlist">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          </svg>
+          {watchlistIds.size > 0 && <span className="tr-glyph-badge">{watchlistIds.size}</span>}
+        </button>
+      </div>
+
+      {/* Right action rail — save / AirPlay / share. */}
+      <div className="tr-rail">
+        <button className={`tr-rail-btn${saved ? ' is-on' : ''}`} onClick={toggleWatchlist} aria-label={saved ? 'Saved' : 'Save'} disabled={!current}>
+          <svg viewBox="0 0 24 24" width="26" height="26" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 1 0-7.8 7.8l1.1 1L12 21l7.7-7.6 1.1-1a5.5 5.5 0 0 0 0-7.8z" />
+          </svg>
+          <span>Save</span>
+        </button>
+        <button className="tr-rail-btn" onClick={onAirPlay} aria-label="AirPlay">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
-            <polygon points="12 15 17 21 7 21 12 15" />
+            <polygon points="12 15 17 21 7 21 12 15" fill="currentColor" stroke="none" />
           </svg>
           <span>AirPlay</span>
         </button>
+        <button className="tr-rail-btn" onClick={onShare} aria-label="Share" disabled={!current?.youtubeKey}>
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+            <path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
+          </svg>
+          <span>Share</span>
+        </button>
+      </div>
 
-        <button className="ta-big ta-skip" onClick={onSkip} aria-label="Skip to next trailer" disabled={!current}>
+      {/* Bottom scrim — movie info + the hero Skip control. */}
+      <div className="tr-bottom">
+        {current && (
+          <div className="tr-meta">
+            <h2>{current.title}{current.year ? <span className="tr-year"> {current.year}</span> : null}</h2>
+            <div className="tr-badges">
+              {Number.isFinite(current.vote_average) && current.vote_average > 0 && (
+                <span className="tr-badge tr-badge-rating">★ {current.vote_average.toFixed(1)}</span>
+              )}
+              {current.runtime ? <span className="tr-badge">{formatRuntime(current.runtime)}</span> : null}
+              {genreNames(current.genre_ids).slice(0, 3).map((g) => (
+                <span className="tr-badge" key={g}>{g}</span>
+              ))}
+            </div>
+            <p className="tr-overview">{current.overview}</p>
+            {hasWhereToWatch && (
+              <p className="tr-watch">
+                {providers.flatrate.length > 0
+                  ? `Streaming on ${providers.flatrate.slice(0, 3).join(', ')}`
+                  : 'Where to watch'}
+                {providers.link && (
+                  <>{' · '}<a href={providers.link} target="_blank" rel="noreferrer">all options →</a></>
+                )}
+              </p>
+            )}
+          </div>
+        )}
+
+        <button className="tr-skip" onClick={onSkip} aria-label="Skip to next trailer" disabled={!current}>
           <span>Skip</span>
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <polygon points="5 4 15 12 5 20 5 4" fill="currentColor" stroke="none" />
             <line x1="19" y1="5" x2="19" y2="19" />
           </svg>
         </button>
-
-        <button className="ta-icon" onClick={onShare} aria-label="Share trailer" disabled={!current?.youtubeKey}>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-            <path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
-          </svg>
-        </button>
       </div>
 
-      <div className="meta">
-        {current && (
-          <>
-            <h2>{current.title} {current.year ? <span className="year">({current.year})</span> : null}</h2>
-            <div className="meta-badges">
-              {Number.isFinite(current.vote_average) && current.vote_average > 0 && (
-                <span className="badge badge-rating">★ {current.vote_average.toFixed(1)}</span>
-              )}
-              {current.runtime ? <span className="badge badge-runtime">{formatRuntime(current.runtime)}</span> : null}
-              {genreNames(current.genre_ids).slice(0, 3).map((g) => (
-                <span className="badge badge-genre" key={g}>{g}</span>
-              ))}
-            </div>
-            <p className="overview">{current.overview}</p>
-            {currentProviders && (currentProviders.flatrate.length > 0 || currentProviders.link) && (
-              <p className="where-to-watch">
-                {currentProviders.flatrate.length > 0
-                  ? `Streaming on ${currentProviders.flatrate.slice(0, 3).join(', ')}`
-                  : 'Where to watch'}
-                {currentProviders.link && (
-                  <>{' · '}<a href={currentProviders.link} target="_blank" rel="noreferrer">all options →</a></>
-                )}
-              </p>
-            )}
-          </>
-        )}
-      </div>
+      {loadError && (
+        <div className="tmdb-error-banner">
+          <div><strong>Couldn&apos;t load trailers.</strong></div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>{loadError}</div>
+          <button onClick={handleRetry} disabled={retrying}>
+            {retrying ? 'Retrying…' : 'Try again'}
+          </button>
+        </div>
+      )}
 
       {showWatchlist && <Watchlist onClose={() => setShowWatchlist(false)} />}
       {showAbout && <AboutScreen onClose={() => setShowAbout(false)} />}
