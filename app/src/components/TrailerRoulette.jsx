@@ -2,18 +2,18 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import Header from './Header.jsx';
 import Player from './Player.jsx';
-import UpNext from './UpNext.jsx';
 import SwipeOverlay from './SwipeOverlay.jsx';
-import CastButton from './CastButton.jsx';
+import Watchlist from './Watchlist.jsx';
+import AboutScreen from './AboutScreen.jsx';
 import {
   discoverMovies, getTrailer, getMovieDetails, pickDiscoverPage,
-  getWatchProviders, getRecommendations, getPersonMovies, toTrailerCandidate, genreNames,
+  getWatchProviders, toTrailerCandidate, genreNames,
 } from '../lib/tmdb.js';
-import { weightedShuffle } from '../lib/shuffleWeighting.js';
+import { uniformShuffle } from '../lib/shuffleWeighting.js';
 import { loadProfile, recordReaction, decay, saveProfile } from '../lib/tasteProfile.js';
 import { get, set, KEYS } from '../lib/storage.js';
 import { shareTrailer } from '../lib/share.js';
-import Search from './Search.jsx';
+import * as airplay from '../lib/airplay.js';
 import * as haptics from '../lib/haptics.js';
 
 // "128" → "2h 8m"; "95" → "1h 35m"; "47" → "47m".
@@ -24,119 +24,48 @@ function formatRuntime(mins) {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
-// Maximum we'll show a single trailer before auto-advancing — used as a
-// safety cap when YouTube hasn't reported real duration yet, and as a
-// fallback if onEnded never fires (e.g. on the static-iframe fallback path).
 const MAX_TRAILER_SECONDS = 180;
 const DEFAULT_CYCLE_SECONDS = 90;
+const PREFETCH_LOOKAHEAD = 3;
 
-// How many upcoming queue entries to prefetch trailer keys for. Two is
-// enough to cover the gap between cycles even if the user is rapid-skipping.
-const PREFETCH_LOOKAHEAD = 2;
-
-export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
-  const [queue, setQueue] = useState([]);            // upcoming trailers
+/**
+ * The whole app: a randomized, instant feed of every reachable movie trailer.
+ * No filters, no accounts. Tap to play, big Skip, one-tap AirPlay. Watchlist
+ * and About are lightweight overlays so nothing stands between you and the video.
+ */
+export default function TrailerRoulette() {
+  const [queue, setQueue] = useState([]);
   const [current, setCurrent] = useState(null);
   const [profile, setProfile] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(DEFAULT_CYCLE_SECONDS);
   const [cycleSeconds, setCycleSeconds] = useState(DEFAULT_CYCLE_SECONDS);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Watchlist set, kept in memory for fast lookup; persisted on changes.
   const [watchlistIds, setWatchlistIds] = useState(new Set());
   const [loadError, setLoadError] = useState(null);
   const [retrying, setRetrying] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  // Streaming/rent/buy availability for the current movie (lazy, US region).
+  const [showWatchlist, setShowWatchlist] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [currentProviders, setCurrentProviders] = useState(null);
 
   const timerRef = useRef(null);
-  const prefetchedRef = useRef(new Set()); // ids whose trailer key has been resolved
-  // Set of YouTube keys that we've confirmed are unplayable (embed disabled
-  // by the uploader / region-locked / removed). We record these from the
-  // iOS player's onEnded({ unplayable: true, youtubeKey }) callback and
-  // skip any movie whose resolved key is in here.
+  const prefetchedRef = useRef(new Set());
   const unplayableKeysRef = useRef(new Set());
-  // Total pages available from TMDB /discover for the current filter (learned
-  // on the first fetch, capped at TMDB's 500-page limit). Refills draw a random
-  // page within this range so the catalog stays deep instead of repeating.
   const totalPagesRef = useRef(1);
 
-  // Boot: load profile, filters, watchlist; fetch initial queue.
-  useEffect(() => {
-    let cancelled = false;
-    async function boot() {
-      const [storedProfileRaw, watchlist] = await Promise.all([
-        loadProfile(),
-        get(KEYS.WATCHLIST),
-      ]);
-      if (cancelled) return;
-
-      const storedProfile = decay(storedProfileRaw);
-      await saveProfile(storedProfile);
-
-      setProfile(storedProfile);
-      setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
-      await loadQueue(filters, storedProfile, { fresh: true });
-    }
-    boot();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Reload the queue when filters change (edited on the Filters tab). Skips the
-  // first mount — boot() handles the initial load.
-  const didMountRef = useRef(false);
-  useEffect(() => {
-    if (!didMountRef.current) { didMountRef.current = true; return; }
-    loadQueue(filters, profile, { fresh: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
-
-  // Load queue whenever filters change.
-  const loadQueue = useCallback(async (f, p, { fresh = false } = {}) => {
+  // Pull a page of every-era movies and shuffle uniformly (pure random order).
+  const loadQueue = useCallback(async (p, { fresh = false } = {}) => {
     try {
       setLoadError(null);
-      const decades = Array.isArray(f.decades) ? f.decades : [];
-      let candidates;
-      if (decades.length > 0) {
-        // Combine multiple specific decades: query each and merge (dedup by id).
-        // Fresh load pulls page 1 of each (recognizable); refills draw a random
-        // page per decade so the mix keeps changing.
-        const pageFor = () => (fresh ? 1 : 1 + Math.floor(Math.random() * 12));
-        const responses = await Promise.all(
-          decades.map((d) =>
-            discoverMovies({ genre: f.genre, decade: d, era: f.era || 'all', page: pageFor() })),
-        );
-        const seen = new Set();
-        candidates = responses
-          .flatMap((r) => r.results || [])
-          .filter((m) => (seen.has(m.id) ? false : seen.add(m.id)))
-          .map(toTrailerCandidate);
-        totalPagesRef.current = 1;
-      } else {
-        // Single window: page 1 on a fresh load (and learn the page count),
-        // then a random deep page on each refill so the queue keeps changing.
-        if (fresh) totalPagesRef.current = 1;
-        const page = fresh ? 1 : pickDiscoverPage(totalPagesRef.current);
-        const data = await discoverMovies({
-          genre: f.genre,
-          decade: null,
-          era: f.era || 'all',
-          page,
-        });
-        if (Number.isFinite(data.total_pages)) {
-          totalPagesRef.current = data.total_pages;
-        }
-        candidates = (data.results || []).map(toTrailerCandidate);
-      }
-      const ordered = weightedShuffle(candidates, p);
-      prefetchedRef.current = new Set(); // queue replaced, reset cache
+      if (fresh) totalPagesRef.current = 1;
+      const page = fresh ? 1 : pickDiscoverPage(totalPagesRef.current);
+      const data = await discoverMovies({ era: 'all', page });
+      if (Number.isFinite(data.total_pages)) totalPagesRef.current = data.total_pages;
+      const candidates = (data.results || []).map(toTrailerCandidate);
+      const ordered = uniformShuffle(candidates);
+      prefetchedRef.current = new Set();
       setQueue(ordered);
-      // Auto-select the first as current; trailer key fetched lazily
-      if (ordered.length > 0) {
-        await selectAsCurrent(ordered[0]);
-      }
+      if (ordered.length > 0) await selectAsCurrent(ordered[0]);
     } catch (err) {
       console.error('[TrailerRoulette] loadQueue failed', err);
       setLoadError(err?.message || String(err));
@@ -144,14 +73,30 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Boot: load taste profile (for swipe history) + watchlist, then the queue.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [storedProfileRaw, watchlist] = await Promise.all([
+        loadProfile(),
+        get(KEYS.WATCHLIST),
+      ]);
+      if (cancelled) return;
+      const storedProfile = decay(storedProfileRaw);
+      await saveProfile(storedProfile);
+      setProfile(storedProfile);
+      setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
+      await loadQueue(storedProfile, { fresh: true });
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleRetry = useCallback(async () => {
     setRetrying(true);
-    try {
-      await loadQueue(filters, profile, { fresh: true });
-    } finally {
-      setRetrying(false);
-    }
-  }, [filters, profile, loadQueue]);
+    try { await loadQueue(profile, { fresh: true }); }
+    finally { setRetrying(false); }
+  }, [profile, loadQueue]);
 
   const selectAsCurrent = useCallback(async (trailer, depth = 0) => {
     let next = trailer;
@@ -164,9 +109,8 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
         console.warn('[TrailerRoulette] getTrailer failed', e);
       }
     }
-    // Skip if we have no key OR if we know this key is unplayable
-    // (embed disabled by the uploader). Auto-skip up to 5 movies deep
-    // before giving up so the user never sees a dead trailer card.
+    // Skip movies with no trailer or a known-unplayable key (auto-skip up to 5
+    // deep) so the user never lands on a dead card.
     const keyKnownBad = next.youtubeKey && unplayableKeysRef.current.has(next.youtubeKey);
     if ((!next.youtubeKey || keyKnownBad) && depth < 5) {
       setQueue((q) => {
@@ -187,8 +131,7 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     setSecondsLeft(DEFAULT_CYCLE_SECONDS);
   }, []);
 
-  // Fetch "where to watch" providers for the current movie (non-blocking;
-  // optional data sourced from JustWatch via TMDB).
+  // "Where to watch" for the current movie (non-blocking; JustWatch via TMDB).
   useEffect(() => {
     setCurrentProviders(null);
     if (!current?.id) return undefined;
@@ -197,13 +140,12 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
       try {
         const p = await getWatchProviders(current.id);
         if (!cancelled) setCurrentProviders(p);
-      } catch { /* providers are optional */ }
+      } catch { /* optional */ }
     })();
     return () => { cancelled = true; };
   }, [current?.id]);
 
-  // Prefetch the next N entries' YouTube keys in the background so when
-  // the cycle advances we don't pay TMDB latency in the gap.
+  // Prefetch upcoming trailer keys so Skip is instant.
   useEffect(() => {
     if (queue.length < 2) return;
     const lookahead = queue.slice(1, 1 + PREFETCH_LOOKAHEAD);
@@ -211,19 +153,13 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     (async () => {
       for (const m of lookahead) {
         if (cancelled) return;
-        if (m.youtubeKey) continue;
-        if (prefetchedRef.current.has(m.id)) continue;
+        if (m.youtubeKey || prefetchedRef.current.has(m.id)) continue;
         prefetchedRef.current.add(m.id);
         try {
           const yt = await getTrailer(m.id);
           if (cancelled) return;
-          if (yt) {
-            setQueue((q) =>
-              q.map((entry) => (entry.id === m.id ? { ...entry, youtubeKey: yt.key } : entry)),
-            );
-          }
+          if (yt) setQueue((q) => q.map((e) => (e.id === m.id ? { ...e, youtubeKey: yt.key } : e)));
         } catch (e) {
-          // Non-fatal — selectAsCurrent will retry when this entry surfaces.
           console.debug('[TrailerRoulette] prefetch failed', m.id, e);
         }
       }
@@ -231,21 +167,14 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     return () => { cancelled = true; };
   }, [queue]);
 
-  // Cycle timer — drives auto-advance with the dynamic cycleSeconds.
+  // Web auto-advance timer (iOS native player owns its own lifecycle).
   useEffect(() => {
-    // On iOS the native TrailerPlayer modal owns the full trailer lifecycle
-    // and reports completion via onEnded; the JS countdown must not advance
-    // the queue underneath the open modal (caused double-advance/desync).
     if (Capacitor.getPlatform() === 'ios') return undefined;
     if (!isPlaying || !current) return undefined;
     clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setSecondsLeft((s) => {
-        if (s <= 1) {
-          haptics.light();
-          advance('skip');
-          return cycleSeconds;
-        }
+        if (s <= 1) { haptics.light(); advance('skip'); return cycleSeconds; }
         return s - 1;
       });
     }, 1000);
@@ -253,8 +182,7 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, current, cycleSeconds]);
 
-  // Pause when app is backgrounded, resume on foreground. iOS only — on
-  // web the document visibility events handle this naturally.
+  // Pause on background / resume on foreground (iOS).
   useEffect(() => {
     if (Capacitor.getPlatform() !== 'ios') return undefined;
     let sub;
@@ -264,21 +192,14 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
         const { App } = await import('@capacitor/app');
         if (cancelled) return;
         sub = await App.addListener('appStateChange', (state) => {
-          if (state.isActive) {
-            // Resume: restart cycle if there's a trailer loaded.
-            if (current?.youtubeKey) setIsPlaying(true);
-          } else {
-            setIsPlaying(false);
-          }
+          if (state.isActive) { if (current?.youtubeKey) setIsPlaying(true); }
+          else setIsPlaying(false);
         });
       } catch (e) {
         console.warn('[TrailerRoulette] @capacitor/app unavailable', e);
       }
     })();
-    return () => {
-      cancelled = true;
-      try { sub?.remove?.(); } catch { /* noop */ }
-    };
+    return () => { cancelled = true; try { sub?.remove?.(); } catch { /* noop */ } };
   }, [current?.youtubeKey]);
 
   const advance = useCallback(async (reaction = null) => {
@@ -288,41 +209,22 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     }
     setQueue((q) => {
       const [, ...rest] = q;
-      const next = rest[0];
-      if (next) selectAsCurrent(next);
-      else {
-        // Queue exhausted — re-fetch
-        loadQueue(filters, profile).catch(() => {});
-      }
+      if (rest[0]) selectAsCurrent(rest[0]);
+      else loadQueue(profile).catch(() => {}); // exhausted → fetch more
       return rest;
     });
-  }, [current, filters, profile, loadQueue, selectAsCurrent]);
+  }, [current, profile, loadQueue, selectAsCurrent]);
 
-  // iOS player → trailer finished OR dismissed OR was unplayable → advance.
-  // Payload shape: { unplayable, youtubeKey, reason }
-  //   reason 'ended'         — trailer played through → 'seen' (positive)
-  //   reason 'user'          — user tapped Done early → null (neutral)
-  //   reason 'unplayable:NN' — embed-disabled / removed → mark + skip
-  //   reason 'replaced'      — internal handoff → null
   const onTrailerEnded = useCallback((payload) => {
     haptics.light();
     if (payload?.unplayable && payload?.youtubeKey) {
       unplayableKeysRef.current.add(payload.youtubeKey);
-      console.warn(
-        '[TrailerRoulette] Marking unplayable key',
-        payload.youtubeKey,
-        'reason:', payload.reason,
-      );
       advance(null);
       return;
     }
-    const reaction = payload?.reason === 'ended' ? 'seen' : null;
-    advance(reaction);
+    advance(payload?.reason === 'ended' ? 'seen' : null);
   }, [advance]);
 
-  // YouTube IFrame Player reports the real duration on ready — use it to
-  // time the cycle precisely instead of the 90s default. Cap at MAX so a
-  // 4-minute behind-the-scenes doesn't trap the viewer.
   const onTrailerDurationKnown = useCallback((duration) => {
     if (!Number.isFinite(duration) || duration <= 0) return;
     const s = Math.min(Math.ceil(duration), MAX_TRAILER_SECONDS);
@@ -330,46 +232,13 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     setSecondsLeft(s);
   }, []);
 
-  const onSeen = useCallback(() => {
-    haptics.medium();
-    advance('seen');
-  }, [advance]);
+  const onSeen = useCallback(() => { haptics.medium(); advance('seen'); }, [advance]);
+  const onSkip = useCallback(() => { haptics.medium(); advance('skip'); }, [advance]);
 
-  const onSkip = useCallback(() => {
+  const onAirPlay = useCallback(async () => {
     haptics.medium();
-    advance('skip');
-  }, [advance]);
-
-  const onShuffle = useCallback(() => {
-    haptics.heavy();
-    if (queue.length > 0 && profile) {
-      const reshuffled = weightedShuffle(queue, profile);
-      setQueue(reshuffled);
-      if (reshuffled[0]) selectAsCurrent(reshuffled[0]);
-    }
-  }, [queue, profile, selectAsCurrent]);
-
-  const toggleWatchlist = useCallback(async () => {
-    if (!current) return;
-    const inList = watchlistIds.has(current.id);
-    haptics.medium();
-    const watchlist = (await get(KEYS.WATCHLIST)) || [];
-    let nextList;
-    if (inList) {
-      nextList = watchlist.filter((w) => w.id !== current.id);
-    } else {
-      nextList = [...watchlist, {
-        id: current.id,
-        title: current.title,
-        year: current.year,
-        poster_path: current.poster_path,
-        addedAt: new Date().toISOString(),
-      }];
-    }
-    await set(KEYS.WATCHLIST, nextList);
-    setWatchlistIds(new Set(nextList.map((w) => w.id)));
-    onWatchlistCountChange?.(nextList.length);
-  }, [current, watchlistIds, onWatchlistCountChange]);
+    try { await airplay.presentRoutePicker(); } catch { /* noop */ }
+  }, []);
 
   const onShare = useCallback(() => {
     if (!current?.youtubeKey) return;
@@ -377,32 +246,29 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
     shareTrailer({ title: current.title, youtubeKey: current.youtubeKey });
   }, [current]);
 
-  // Search → play a chosen movie (seeding its recommendations behind it) or
-  // load an actor's filmography into the queue.
-  const onSearchMovie = useCallback(async (movie) => {
-    const base = toTrailerCandidate(movie);
-    let recs = [];
-    try { recs = (await getRecommendations(movie.id)).map(toTrailerCandidate); } catch { /* optional */ }
-    prefetchedRef.current = new Set();
-    totalPagesRef.current = 1;
-    setQueue([base, ...recs]);
-    selectAsCurrent(base);
-  }, [selectAsCurrent]);
+  const toggleWatchlist = useCallback(async () => {
+    if (!current) return;
+    haptics.medium();
+    const watchlist = (await get(KEYS.WATCHLIST)) || [];
+    const inList = watchlist.some((w) => w.id === current.id);
+    const nextList = inList
+      ? watchlist.filter((w) => w.id !== current.id)
+      : [...watchlist, {
+          id: current.id, title: current.title, year: current.year,
+          poster_path: current.poster_path, addedAt: new Date().toISOString(),
+        }];
+    await set(KEYS.WATCHLIST, nextList);
+    setWatchlistIds(new Set(nextList.map((w) => w.id)));
+  }, [current]);
 
-  const onSearchPerson = useCallback(async (person) => {
-    let movies = [];
-    try { movies = (await getPersonMovies(person.id)).map(toTrailerCandidate); } catch { /* optional */ }
-    if (movies.length === 0) return;
-    prefetchedRef.current = new Set();
-    totalPagesRef.current = 1;
-    setQueue(movies);
-    selectAsCurrent(movies[0]);
-  }, [selectAsCurrent]);
+  const saved = current ? watchlistIds.has(current.id) : false;
 
   return (
     <div className="trailer-roulette">
       <Header
-        onOpenSearch={() => { haptics.light(); setShowSearch(true); }}
+        onOpenWatchlist={() => { haptics.light(); setShowWatchlist(true); }}
+        onOpenAbout={() => { haptics.light(); setShowAbout(true); }}
+        watchlistCount={watchlistIds.size}
         cycleProgress={(cycleSeconds - secondsLeft) / cycleSeconds}
       />
 
@@ -417,7 +283,6 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
       )}
 
       <div className="player-wrap">
-        {/* SwipeOverlay first in DOM, below Player in z-stack for taps. */}
         <SwipeOverlay onSeen={onSeen} onSkip={onSkip} disabled={!current} />
         <Player
           trailer={current}
@@ -427,37 +292,36 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
           onEnded={onTrailerEnded}
           onDurationKnown={onTrailerDurationKnown}
         />
-        <div className="player-overlay-controls">
-          <button
-            className="control-btn"
-            onClick={toggleWatchlist}
-            aria-label={watchlistIds.has(current?.id) ? 'Remove from watchlist' : 'Add to watchlist'}
-          >
-            {watchlistIds.has(current?.id) ? '♥' : '♡'}
-          </button>
-          <CastButton />
-          <button
-            className="control-btn"
-            onClick={onShare}
-            disabled={!current?.youtubeKey}
-            aria-label="Share trailer"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-              <path d="M16 6l-4-4-4 4" />
-              <path d="M12 2v13" />
-            </svg>
-          </button>
-          <button className="control-btn shuffle" onClick={onShuffle} aria-label="Shuffle">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6C13.6 6.6 14.8 6 16.1 6H22" />
-              <path d="m18 2 4 4-4 4" />
-              <path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" />
-              <path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" />
-              <path d="m18 14 4 4-4 4" />
-            </svg>
-          </button>
-        </div>
+      </div>
+
+      {/* Primary actions — AirPlay and Skip are the heroes; save/share are quiet. */}
+      <div className="trailer-actions">
+        <button className="ta-icon" onClick={toggleWatchlist} aria-label={saved ? 'Remove from watchlist' : 'Save to watchlist'} disabled={!current}>
+          <span style={{ fontSize: 22, lineHeight: 1 }}>{saved ? '♥' : '♡'}</span>
+        </button>
+
+        <button className="ta-big ta-airplay" onClick={onAirPlay} aria-label="AirPlay to TV">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+            <polygon points="12 15 17 21 7 21 12 15" />
+          </svg>
+          <span>AirPlay</span>
+        </button>
+
+        <button className="ta-big ta-skip" onClick={onSkip} aria-label="Skip to next trailer" disabled={!current}>
+          <span>Skip</span>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polygon points="5 4 15 12 5 20 5 4" fill="currentColor" stroke="none" />
+            <line x1="19" y1="5" x2="19" y2="19" />
+          </svg>
+        </button>
+
+        <button className="ta-icon" onClick={onShare} aria-label="Share trailer" disabled={!current?.youtubeKey}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+            <path d="M16 6l-4-4-4 4" /><path d="M12 2v13" />
+          </svg>
+        </button>
       </div>
 
       <div className="meta">
@@ -480,29 +344,16 @@ export default function TrailerRoulette({ filters, onWatchlistCountChange }) {
                   ? `Streaming on ${currentProviders.flatrate.slice(0, 3).join(', ')}`
                   : 'Where to watch'}
                 {currentProviders.link && (
-                  <>
-                    {' · '}
-                    <a href={currentProviders.link} target="_blank" rel="noreferrer">all options →</a>
-                  </>
+                  <>{' · '}<a href={currentProviders.link} target="_blank" rel="noreferrer">all options →</a></>
                 )}
               </p>
             )}
-            <div className="cycle-counter" aria-label={`${secondsLeft} seconds left`}>
-              {secondsLeft}s
-            </div>
           </>
         )}
       </div>
 
-      <UpNext queue={queue.slice(1, 6)} onSelect={selectAsCurrent} />
-
-      {showSearch && (
-        <Search
-          onClose={() => setShowSearch(false)}
-          onSelectMovie={onSearchMovie}
-          onSelectPerson={onSearchPerson}
-        />
-      )}
+      {showWatchlist && <Watchlist onClose={() => setShowWatchlist(false)} />}
+      {showAbout && <AboutScreen onClose={() => setShowAbout(false)} />}
     </div>
   );
 }
