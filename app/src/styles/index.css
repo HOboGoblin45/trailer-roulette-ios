@@ -942,3 +942,104 @@ a { color: var(--gold); text-decoration: none; }
   transform: scale(0.96);
   opacity: 0.9;
 }
+
+/* ═══════════ v2.1 CINEMATIC REDESIGN (overrides) ═══════════ */
+
+/* Depth — rich vertical gradient canvas behind everything */
+body {
+  background: linear-gradient(180deg, #16203a 0%, var(--bg) 44%, #070b14 100%);
+  background-attachment: fixed;
+}
+.app-shell { background: transparent; }
+
+/* Glassy, floating header */
+.app-header {
+  background: linear-gradient(180deg, rgba(10,16,28,0.85), rgba(10,16,28,0.32));
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.app-title { font-size: 18px; letter-spacing: -0.03em; }
+
+/* Hero player — soft shadow + bottom scrim that blends video into the meta */
+.player-wrap { box-shadow: 0 18px 44px -20px rgba(0,0,0,0.95); }
+.player-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 40%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(7,11,20,0) 0%, rgba(7,11,20,0.5) 68%, var(--bg) 100%);
+  z-index: 1;
+}
+.player-play-button, .player-overlay-controls, .player-error, .player-hint { z-index: 4; }
+.player-ios .player-backdrop { filter: blur(22px) brightness(0.42) saturate(155%); transform: scale(1.2); }
+
+/* Prominent, gently glowing play button */
+.player-play-button {
+  padding: 16px 32px;
+  font-size: 18px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 1px rgba(212,175,55,0.5), 0 10px 34px rgba(212,175,55,0.38);
+  animation: trGlow 2.8s ease-in-out infinite;
+}
+@keyframes trGlow {
+  0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 1px rgba(212,175,55,0.45), 0 8px 26px rgba(212,175,55,0.28); }
+  50%      { box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 1px rgba(212,175,55,0.72), 0 12px 42px rgba(212,175,55,0.5); }
+}
+
+/* Cinematic meta */
+.meta { padding: 14px 20px 8px; animation: trRise 0.5s cubic-bezier(0.2,0.7,0.2,1) both; }
+.meta h2 {
+  font-family: var(--font-display);
+  font-size: 27px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  margin: 0 0 10px;
+}
+.meta .year { font-weight: 400; color: var(--fg-dim); font-size: 0.7em; }
+.meta .overview { color: var(--fg-2); font-size: 15px; }
+@keyframes trRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+/* Sleek translucent badge pills */
+.meta-badges .badge {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.10);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  padding: 5px 11px;
+  font-size: 12px;
+}
+.meta-badges .badge-rating {
+  color: var(--gold);
+  border-color: rgba(212,175,55,0.4);
+  background: rgba(212,175,55,0.12);
+}
+
+/* Premium overlay controls */
+.player-overlay-controls { gap: 10px; bottom: 14px; right: 14px; }
+.control-btn {
+  width: 44px; height: 44px;
+  background: rgba(10,14,24,0.55);
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+}
+.control-btn svg { width: 22px; height: 22px; display: block; }
+
+/* Refined chips + era segments */
+.era-segment { font-size: 13px; font-weight: 600; transition: background 0.2s ease, color 0.2s ease; }
+.era-segment.active { background: var(--gold); color: #1B1810; }
+.chip {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+}
+.chip:active { transform: scale(0.95); }
+.chip.active {
+  background: rgba(212,175,55,0.16);
+  border-color: rgba(212,175,55,0.55);
+  color: var(--gold);
+}
+
+/* Screens fade/slide in */
+.screen { animation: trRise 0.4s cubic-bezier(0.2,0.7,0.2,1) both; }
+.up-next { border-top: 1px solid rgba(255,255,255,0.06); }
