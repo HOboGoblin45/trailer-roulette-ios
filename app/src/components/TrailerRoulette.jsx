@@ -222,7 +222,17 @@ export default function TrailerRoulette() {
       advance(null);
       return;
     }
-    advance(payload?.reason === 'ended' ? 'seen' : null);
+    const reason = String(payload?.reason || '');
+    if (reason === 'ended') advance('seen');
+    else if (reason === 'skip') advance('skip');
+    else advance(null);
+  }, [advance]);
+
+  // Native chained to the next trailer in place (continuous playback). Keep
+  // the JS queue + metadata panel in sync without reopening the player.
+  const onAdvanceInPlace = useCallback((reaction) => {
+    haptics.light();
+    advance(reaction);
   }, [advance]);
 
   const onTrailerDurationKnown = useCallback((duration) => {
@@ -286,10 +296,12 @@ export default function TrailerRoulette() {
         <SwipeOverlay onSeen={onSeen} onSkip={onSkip} disabled={!current} />
         <Player
           trailer={current}
+          nextTrailer={queue[1]}
           isPlaying={isPlaying}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onEnded={onTrailerEnded}
+          onAdvanceInPlace={onAdvanceInPlace}
           onDurationKnown={onTrailerDurationKnown}
         />
       </div>

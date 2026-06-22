@@ -1,28 +1,42 @@
 import { registerPlugin } from '@capacitor/core';
 
 /**
- * TrailerPlayer — local Capacitor plugin that opens YouTube trailers in
- * SFSafariViewController on iOS. Real Safari context, so YouTube plays
- * normally without the WKWebView Referer-stripping issue (WebKit Bug 169846).
+ * TrailerPlayer — local Capacitor plugin for in-app YouTube trailer playback.
+ *
+ * On iOS (v2.0.0) it presents a fullscreen modal hosting a fresh WKWebView
+ * that loads our Vercel proxy page (a real third-party https origin YouTube
+ * accepts as an embedder). Playback is CONTINUOUS: the modal stays open and
+ * chains to the next trailer in place — no dismiss/re-present between videos.
  *
  * Web/dev fallback: opens the watch URL in a new tab. Auto-resolved.
  *
  * API:
- *   await TrailerPlayer.openTrailer({ youtubeKey: 'dQw4w9WgXcQ' })
- *     → { dismissed: true, reason: 'user' | 'replaced' | ... }
+ *   await TrailerPlayer.openTrailer({ youtubeKey, title?, nextYoutubeKey?, nextTitle? })
+ *     → { dismissed: true, reason, youtubeKey }
+ *       reason ∈ 'user' | 'ended' | 'skip' | 'replaced' | 'unplayable:<...>'
+ *
+ *   await TrailerPlayer.enqueueNext({ youtubeKey, title? })
+ *     → { queued: boolean, reason? }    // primes the in-place chain target
  *
  *   await TrailerPlayer.closeTrailer()
- *     → { closed: true }
+ *     → { closed: boolean }
+ *
+ * Events (addListener):
+ *   'trailerEvent' → { event, youtubeKey, from? }
+ *     event ∈ 'started'  (playback began)
+ *           | 'advanced' (auto-chained to next trailer on end / error)
+ *           | 'skipped'  (user tapped in-player Skip → chained to next)
  */
 const TrailerPlayer = registerPlugin('TrailerPlayer', {
   web: {
     openTrailer: async ({ youtubeKey } = {}) => {
       if (typeof window === 'undefined' || !youtubeKey) {
-        return { dismissed: true, reason: 'no-window' };
+        return { dismissed: true, reason: 'no-window', youtubeKey: youtubeKey || '' };
       }
       window.open(`https://www.youtube.com/watch?v=${encodeURIComponent(youtubeKey)}`, '_blank', 'noopener,noreferrer');
-      return { dismissed: true, reason: 'web-fallback' };
+      return { dismissed: true, reason: 'web-fallback', youtubeKey };
     },
+    enqueueNext: async () => ({ queued: false, reason: 'web-fallback' }),
     closeTrailer: async () => ({ closed: false, reason: 'web-fallback' }),
   },
 });

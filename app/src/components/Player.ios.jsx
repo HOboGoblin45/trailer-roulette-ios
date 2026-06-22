@@ -4,71 +4,144 @@ import { backdropUrl, posterUrl } from '../lib/tmdb.js';
 import * as haptics from '../lib/haptics.js';
 
 /**
- * iOS player (v1.6.0) — local TrailerPlayer Capacitor plugin.
+ * iOS player (v2.0.0) — continuous, tap-free playback.
  *
- * This component calls the plugin's openTrailer({ youtubeKey, title }).
- * The plugin presents a fullscreen modal UIViewController hosting a fresh
- * WKWebView, which does a top-level HTTPS navigation to the Vercel proxy
- * page (https://trailer-roulette.vercel.app/embed?v=ID) — not loadHTMLString,
- * and not SFSafariViewController. The proxy page hosts YouTube's official
- * iframe under a real third-party https origin, then forwards YT IFrame
- * Player events to native via webkit.messageHandlers.trailerEvent. The
- * plugin resolves the openTrailer promise on ended / user-dismiss /
- * unplayable.
+ * The native TrailerPlayer plugin presents a fullscreen modal hosting a fresh
+ * WKWebView that loads our Vercel proxy (https://trailer-roulette.vercel.app
+ * /embed?v=ID) — a real third-party https origin YouTube accepts as an
+ * embedder. (loadHTMLString gives an opaque origin, and WebKit Bug 169846
+ * strips the Referer from WKWebView iframe requests — both yield YT error 153.
+ * A real top-level https navigation is what makes embedded playback work.)
  *
- * Why prior approaches failed: serving the iframe via loadHTMLString gives
- * it an opaque/null origin, so YouTube's referer-required embedder check
- * rejects playback, and WebKit Bug 169846 strips the Referer header from
- * WKWebView iframe requests — both yield YouTube error 153. Loading a real
- * https proxy page gives the iframe a legitimate origin and Referer, which
- * is what makes embedded playback work inside the WKWebView.
+ * Continuous model: the user taps Play once to begin a session. From then on
+ * the native modal stays up and chains trailer→trailer in place — no
+ * dismiss/re-present flash. We keep native primed with the upcoming key via
+ * enqueueNext, and react to its 'advanced'/'skipped' events to keep the JS
+ * queue and the metadata panel beneath the modal in sync.
+ *
+ * Fallback: if native isn't primed when a trailer ends (key not prefetched in
+ * time) it resolves the openTrailer promise with reason 'ended'/'skip'; we
+ * advance the queue and auto-reopen for the new current. So the session stays
+ * continuous either way — the in-place path is just the seamless optimization.
+ * Tapping Done ends the session (no advance, no reopen).
  */
-export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded }) {
-  const openingRef = useRef(false);
+export default function PlayerIOS({
+  trailer,
+  nextTrailer,
+  isPlaying,
+  onPlay,
+  onPause,
+  onEnded,
+  onAdvanceInPlace,
+}) {
+  const openingRef = useRef(false);   // true while the native modal is open
+  const sessionRef = useRef(false);   // true once the user has started watching
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(null);
 
-  // Reset error when trailer changes.
+  // Latest callbacks without re-subscribing the native listener.
+  const onAdvanceRef = useRef(onAdvanceInPlace);
+  const onPlayRef = useRef(onPlay);
+  useEffect(() => { onAdvanceRef.current = onAdvanceInPlace; }, [onAdvanceInPlace]);
+  useEffect(() => { onPlayRef.current = onPlay; }, [onPlay]);
+
+  // Reset error when the trailer changes.
   useEffect(() => { setError(null); }, [trailer?.youtubeKey]);
 
-  // If parent flips isPlaying off (e.g. background pause), close Safari.
+  // Subscribe once to native in-place lifecycle events.
+  useEffect(() => {
+    let handle;
+    let cancelled = false;
+    (async () => {
+      try {
+        handle = await TrailerPlayer.addListener('trailerEvent', (evt) => {
+          const event = evt?.event;
+          if (event === 'started') {
+            onPlayRef.current?.();
+          } else if (event === 'advanced') {
+            // Native chained to the next trailer in place. Advance the JS
+            // queue (records "seen") so the metadata panel matches what's
+            // now playing — the modal never closed, so we do NOT reopen.
+            onAdvanceRef.current?.('seen');
+          } else if (event === 'skipped') {
+            onAdvanceRef.current?.('skip');
+          }
+        });
+      } catch {
+        if (!cancelled) handle = undefined;
+      }
+    })();
+    return () => { cancelled = true; try { handle?.remove?.(); } catch { /* noop */ } };
+  }, []);
+
+  // Keep native primed with the upcoming key while the modal is open, so it
+  // can chain in place the instant the current trailer ends.
+  useEffect(() => {
+    if (!openingRef.current) return;
+    if (!nextTrailer?.youtubeKey) return;
+    TrailerPlayer.enqueueNext({
+      youtubeKey: nextTrailer.youtubeKey,
+      title: nextTrailer.title || '',
+    }).catch(() => {});
+  }, [nextTrailer?.youtubeKey, nextTrailer?.title]);
+
+  // If the parent pauses (e.g. app backgrounded), close the native player.
   useEffect(() => {
     if (!isPlaying && openingRef.current) {
       TrailerPlayer.closeTrailer().catch(() => {});
       openingRef.current = false;
+      sessionRef.current = false;
     }
   }, [isPlaying]);
 
-  const handlePlay = async () => {
-    if (!trailer?.youtubeKey || opening) return;
+  // Continuous auto-reopen: when a new trailer becomes current while a
+  // session is active and the modal is closed (the fallback path), reopen
+  // automatically — no second tap. During in-place chaining the modal is
+  // still open (openingRef true), so this stays out of the way.
+  useEffect(() => {
+    if (!sessionRef.current) return;
+    if (openingRef.current) return;
+    if (!trailer?.youtubeKey) return;
+    openTrailer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trailer?.youtubeKey]);
+
+  const openTrailer = async () => {
+    if (!trailer?.youtubeKey || openingRef.current) return;
     haptics.medium();
     setOpening(true);
     setError(null);
-    onPlay?.();
+    sessionRef.current = true;
     openingRef.current = true;
+    onPlay?.();
     try {
-      // Resolves when the user dismisses the in-app modal player or
-      // when the trailer ends naturally / errors. Resolve shape:
-      //   { dismissed: true, reason: 'user' | 'ended' | 'replaced'
-      //                            | 'unplayable:<ytErrorCode>' }
       const result = await TrailerPlayer.openTrailer({
         youtubeKey: trailer.youtubeKey,
         title: trailer.title || '',
+        nextYoutubeKey: nextTrailer?.youtubeKey || '',
+        nextTitle: nextTrailer?.title || '',
       });
+      openingRef.current = false;
       onPause?.();
 
-      // Surface unplayable-due-to-YT-restriction so the parent can mark
-      // this video id as bad and never try it again this session.
       const reason = String(result?.reason || '');
+      if (reason === 'user') {
+        // User chose to stop. End the session; stay on the current movie.
+        sessionRef.current = false;
+        return;
+      }
       const unplayable = reason.startsWith('unplayable');
-      onEnded?.({ unplayable, youtubeKey: trailer.youtubeKey, reason });
+      // Fallback close (ended / skip / unplayable with nothing primed):
+      // advance the queue; the auto-reopen effect plays the next one.
+      onEnded?.({ unplayable, youtubeKey: result?.youtubeKey || trailer.youtubeKey, reason });
     } catch (e) {
       const msg = e?.message || String(e);
       console.warn('[PlayerIOS] openTrailer failed', e);
       setError(`Couldn't open trailer: ${msg}`);
+      openingRef.current = false;
+      sessionRef.current = false;
       onPause?.();
     } finally {
-      openingRef.current = false;
       setOpening(false);
     }
   };
@@ -97,7 +170,7 @@ export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded
       <button
         type="button"
         className="player-play-button"
-        onClick={handlePlay}
+        onClick={openTrailer}
         disabled={!hasTrailer || opening}
         aria-label={hasTrailer ? `Play ${trailer.title || 'trailer'}` : 'No trailer available'}
       >
@@ -108,7 +181,7 @@ export default function PlayerIOS({ trailer, isPlaying, onPlay, onPause, onEnded
       </button>
 
       {!hasTrailer && (
-        <p className="player-hint">Swipe to skip — we&apos;ll find another.</p>
+        <p className="player-hint">Finding another…</p>
       )}
 
       {error && (

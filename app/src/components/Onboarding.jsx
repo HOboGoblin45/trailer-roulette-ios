@@ -3,33 +3,29 @@ import { set, KEYS } from '../lib/storage.js';
 import * as haptics from '../lib/haptics.js';
 
 /**
- * First-run onboarding (v1.3.0).
+ * First-run onboarding (v2.4.0).
  *
- * Three cards. Skippable. Mounted by App.jsx when ONBOARDED is falsy and
- * unmounted on completion. We don't gate the trailer queue behind this —
- * the user can swipe past in two seconds if they want.
+ * Three short cards. Skippable. Mounted by App.jsx when ONBOARDED is falsy
+ * and unmounted on completion — nothing gates the trailer feed behind it.
  *
- * Why bother? Apple's Design guidelines (4.0) reward apps that introduce
- * their unique UX patterns to first-time users. Trailer Roulette has two
- * non-obvious gestures (swipe right = seen it, swipe left = skip it) and
- * a private taste profile that gets stronger with use; surfacing those up
- * front improves both review odds and 7-day retention.
+ * Copy matches the simplified app: no filters, no accounts. Just a
+ * never-ending randomized feed you play, skip, and beam to your TV.
  */
 const CARDS = [
   {
-    title: 'Every era of cinema, shuffled.',
-    body: 'Trailer Roulette spins through movie trailers from every decade — timeless classics and brand-new releases alike. Use the Era and decade filters any time to dial in exactly what you\'re in the mood for.',
-    icon: '🔀',
+    title: 'Every movie trailer. Shuffled.',
+    body: 'A never-ending, randomized feed of trailers from every era of cinema — timeless classics and brand-new releases alike. Tap play and go.',
+    icon: '🎬',
   },
   {
-    title: 'Swipe to teach the shuffle.',
-    body: 'Swipe right when you\'ve seen it (or loved it), left when you didn\'t. The more you swipe, the more the queue tilts toward what you actually love. Your taste profile lives on this phone — nowhere else.',
-    icon: '↔',
+    title: 'Skip freely. Beam to your TV.',
+    body: 'Tap Skip (or swipe) to jump to the next trailer instantly. Tap AirPlay to send the whole feed to your TV — no menus in the way.',
+    icon: '📺',
   },
   {
     title: 'Save the keepers.',
-    body: 'Tap the heart on any trailer to save the movie to your Watchlist. No accounts, no tracking — your list, your phone, your business.',
-    icon: '♡',
+    body: 'Tap the heart to save any movie to your Watchlist. No account, no tracking — it all lives on this phone.',
+    icon: '♥',
   },
 ];
 
@@ -58,14 +54,14 @@ export default function Onboarding({ onDone }) {
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(14, 23, 38, 0.96)',
+        background: 'var(--bg, #FFFFFF)',
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
-        color: '#FFFEF8',
+        color: 'var(--fg, #0F1722)',
       }}
     >
       {/* Skip button — top-right. */}
@@ -77,11 +73,11 @@ export default function Onboarding({ onDone }) {
           top: 'max(env(safe-area-inset-top), 16px)',
           right: 16,
           background: 'transparent',
-          color: '#FFFEF8',
+          color: 'var(--fg, #0F1722)',
           border: 'none',
           padding: 12,
           fontSize: 14,
-          opacity: 0.7,
+          opacity: 0.6,
           cursor: 'pointer',
         }}
       >
@@ -93,7 +89,6 @@ export default function Onboarding({ onDone }) {
         aria-hidden="true"
         style={{
           fontSize: 64,
-          color: '#D4AF37',
           marginBottom: 24,
           lineHeight: 1,
         }}
@@ -118,7 +113,7 @@ export default function Onboarding({ onDone }) {
           fontSize: 16,
           lineHeight: 1.5,
           textAlign: 'center',
-          opacity: 0.85,
+          opacity: 0.7,
           margin: '0 0 40px 0',
           maxWidth: 380,
         }}
@@ -138,7 +133,7 @@ export default function Onboarding({ onDone }) {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              background: i === step ? '#D4AF37' : 'rgba(255, 254, 248, 0.3)',
+              background: i === step ? 'var(--gold, #3DA5F4)' : 'rgba(15, 23, 34, 0.2)',
               transition: 'background 200ms ease',
             }}
           />

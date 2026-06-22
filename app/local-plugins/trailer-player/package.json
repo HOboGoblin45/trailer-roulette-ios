@@ -1,7 +1,7 @@
 {
   "name": "trailer-player",
-  "version": "1.0.0",
-  "description": "SFSafariViewController-based YouTube trailer player for Trailer Roulette. Bypasses both the WKWebView Referer-stripping bug and the @capacitor/browser fullscreen SceneDelegate bug.",
+  "version": "2.0.0",
+  "description": "Continuous in-app YouTube trailer player for Trailer Roulette. A fullscreen WKWebView modal loads our Vercel proxy origin (sidestepping WebKit Bug 169846) and chains trailers in place for seamless, tap-free playback.",
   "main": "src/index.js",
   "private": true,
   "files": [
