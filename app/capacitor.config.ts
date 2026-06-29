@@ -5,8 +5,12 @@ const config: CapacitorConfig = {
   appName: 'Trailer Roulette',
   webDir: 'dist',
   ios: {
-    contentInset: 'always',
-    scrollEnabled: true,
+    // Full-screen immersive UI: CSS owns all insets via viewport-fit=cover +
+    // env(safe-area-inset-*). Don't let WKWebView add its own content inset or
+    // bounce-scroll — that double-inset was pushing the bottom buttons off the
+    // bottom of the screen.
+    contentInset: 'never',
+    scrollEnabled: false,
     backgroundColor: '#000000', // immersive dark video stage
     limitsNavigationsToAppBoundDomains: false,
     preferredContentMode: 'mobile',
