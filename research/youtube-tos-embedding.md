@@ -5,7 +5,13 @@
 - https://developers.google.com/youtube/terms/api-services-terms-of-service
 - https://developers.google.com/youtube/terms/developer-policies
 
-**Pulled**: 2026-04-25
+**Pulled**: 2026-04-25 · **Architecture updated**: 2026-06-28
+
+> The implementation changed since this was first pulled. iOS no longer uses
+> `SFSafariViewController`. Trailers now play in YouTube's official IFrame player
+> hosted on a first-party https page (our `/embed`) inside a native WKWebView,
+> and auto-advance uses the official IFrame Player API's `onStateChange` event.
+> The sections below reflect the current build.
 
 ## Permitted
 - Show YouTube videos through the **official embeddable YouTube player**.
@@ -20,10 +26,10 @@
 > "You agree not to alter or modify any part of the Service."
 
 ## What we do
-- iOS plays trailers in `SFSafariViewController` via `@capacitor/browser`. The browser loads the YouTube watch page, which serves YouTube's native player intact, including ads, controls, and the link back to YouTube.
-- Web plays via the official `<iframe>` embed without modification.
-- We do **not** rip, cache, or reformat YouTube content.
-- We do **not** intercept the player or observe its DOM.
+- iOS plays trailers in YouTube's **official IFrame embedded player**, hosted on a first-party https page (our `/embed` page) loaded in a native WKWebView. The video streams directly from YouTube to its own player, intact — ads, controls, and the link back to YouTube included. The page exists only to supply a valid https referrer (a documented WebKit limitation, Bug 169846, strips it otherwise); we do **not** proxy, cache, or touch the video stream.
+- Web plays via the official IFrame embed without modification.
+- We do **not** rip, cache, download, or reformat YouTube content.
+- We do **not** modify, skin, overlay, or block the player. We read **only** the official IFrame Player API's published `onStateChange` events — to know when a trailer ends so we can queue the next one. That is a documented, sanctioned use of YouTube's own API, not an inspection or modification of the player internals.
 
 ## What we don't do
 - No mp3-style audio extraction
@@ -32,13 +38,13 @@
 - No custom skin/overlay over the player
 - No repackaging trailer URLs as our own URL scheme
 
-## How our cycle timer is compliant
-The 90-second auto-close-and-advance is implemented at the **app shell** layer, not the player layer. We start a timer when we open the SFSafariViewController and dismiss the view when it expires. We don't observe the player's playback state or modify its behavior — the timer fires on wall-clock time. From YouTube's perspective, the user simply navigated away.
+## How auto-advance is compliant
+Trailers advance when the **official IFrame Player API reports the video has ended** (`onStateChange` → ENDED) — the documented, intended way to detect the end of an embedded video. We then load the next trailer in the same official player. We do not modify, skin, or block the player, and we do not extract or proxy the video. A short watchdog timeout only guards against a trailer that never loads (it dismisses the view); it does not alter playback. The web build uses the same official IFrame Player API.
 
 ## Risk register
 | Risk | Mitigation |
 |------|------------|
-| Future feature wants "trailer ended" callback | Cannot use iframe API on iOS inside SFSafariViewController (cross-origin). Workaround: cycle timer. |
+| Detecting "trailer ended" | Uses the official IFrame Player API's `onStateChange` (ENDED) event, forwarded from the first-party embed page to native. Sanctioned API use; no player modification. |
 | AirPlay output | Routes the player's video natively via AVRoutePickerView. Does not modify the player. Compliant. |
 | Background playback | Disabled. Would require modifying the player. |
 | Picture-in-picture | Out of scope for v1. PiP would require the iOS AVPlayer, which would mean downloading or proxying YouTube content. Don't do it. |

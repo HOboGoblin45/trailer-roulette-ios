@@ -170,6 +170,20 @@ export async function discoverRandomMix({ strata } = {}) {
   return [].concat(...groups).filter((m) => m && !seen.has(m.id) && seen.add(m.id));
 }
 
+/**
+ * Discover popular movies released in a specific year (used by Time Machine and
+ * other year-based fun modes). Returns the raw TMDB discover payload.
+ */
+export async function discoverByYear(year, { page = 1, voteFloor = 50 } = {}) {
+  return call('/discover/movie', {
+    sort_by: 'popularity.desc',
+    page,
+    include_adult: false,
+    'vote_count.gte': voteFloor,
+    primary_release_year: year,
+  });
+}
+
 export async function getTrailer(movieId) {
   return cached(`trailer:${movieId}`, async () => {
     const data = await call(`/movie/${movieId}/videos`);
@@ -240,30 +254,6 @@ export async function getWatchProviders(movieId, region = 'US') {
       buy: names(r.buy),
     };
   });
-}
-
-/** Search movies + people in one call. Returns { movies, people } (raw TMDB objects). */
-export async function searchMulti(query) {
-  const q = (query || '').trim();
-  if (!q) return { movies: [], people: [] };
-  const data = await call('/search/multi', { query: q, include_adult: false, page: 1 });
-  const results = data.results || [];
-  return {
-    movies: results.filter((r) => r.media_type === 'movie'),
-    people: results.filter((r) => r.media_type === 'person'),
-  };
-}
-
-/** A person's movie cast credits, most popular first (raw TMDB movie objects). */
-export async function getPersonMovies(personId) {
-  const data = await call(`/person/${personId}/movie_credits`);
-  return (data.cast || []).slice().sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-}
-
-/** Movies recommended off a given movie (raw TMDB movie objects). */
-export async function getRecommendations(movieId) {
-  const data = await call(`/movie/${movieId}/recommendations`);
-  return data.results || [];
 }
 
 export function posterUrl(path, size = 'w500') {

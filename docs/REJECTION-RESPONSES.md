@@ -23,25 +23,25 @@ This is the single most likely rejection. Lead with this one.
 ```
 Thank you for the review.
 
-Trailer Roulette is a personalized movie-discovery product, not a YouTube player. Trailer playback is one feature within a larger experience that includes:
+Trailer Roulette is a movie-discovery product, not a YouTube player. Trailer playback is one feature within a larger experience that includes:
 
-1. **Watchlist** — users save trailers locally; persisted across launches via @capacitor/preferences. No backend; user-owned data.
-2. **Seen it / Skip it gestures** — left/right swipes during/after playback record reactions; this is a mobile-native gesture model not present in any web alternative.
-3. **On-device taste profile** — each reaction updates local affinity buckets (genre, decade, runtime). The data never leaves the user's iPhone.
-4. **Weighted shuffle algorithm** — once a user has reacted to ≥10 trailers, future shuffles bias toward their taste profile while preserving exploration. The surfacing logic is original IP.
-5. **Filter-driven curation** — genre + decade + runtime filters shape the trailer queue, producing a shaped feed rather than a flat list.
-6. **Cycle/shuffle UX** — a 90-second auto-advance creates a "TV channel" experience unique to this app.
+1. **Era-spanning curation** — the feed samples a random year from each decade band (1970s–today) with per-era quality floors, then shuffles, so a single session spans the whole history of cinema. This stratified surfacing logic is original IP (app/src/lib/tmdb.js).
+2. **Continuous "channel" playback** — a custom native plugin chains trailer→trailer in place, creating a lean-back TV-channel experience with no flash between videos (app/local-plugins/trailer-player/).
+3. **Swipe-card discovery** — a draggable card (drag right to save, left to skip, tap to play) with fling physics and SAVE/SKIP stamps; a mobile-native interaction model built from scratch (app/src/components/SwipeCard.jsx).
+4. **Watchlist** — users save movies locally, persisted across launches via @capacitor/preferences. No backend; user-owned data.
+5. **Where to watch** — per-movie streaming availability turns a trailer into an actionable next step.
+6. **One-tap AirPlay** — beams the feed to a TV via a native route picker.
 
-Trailers play exclusively via YouTube's official embeddable player inside Apple's SFSafariViewController. We do not host, modify, or redistribute trailer content. We comply fully with YouTube's Terms of Service.
+Trailers play exclusively through YouTube's official IFrame embedded player, unmodified, hosted on a first-party https page in a native web view; the video streams directly from YouTube. We do not host, modify, separate, or redistribute trailer content, and we use only the player API's official events. We comply fully with YouTube's Terms of Service.
 
-Removing YouTube would not eliminate Trailer Roulette. The discovery loop, watchlist, taste profile, weighted shuffle, and curation UI all run on-device and are independent of any external service.
+Removing YouTube would not eliminate Trailer Roulette. The curation engine, channel playback, swipe interface, watchlist, and where-to-watch all run on-device and are independent of any external service.
 
 The About screen displays the required TMDB attribution. The privacy nutrition label is "Data Not Collected."
 
 Please reconsider. Happy to provide a video walkthrough of the original features if helpful.
 ```
 
-**Additionally**: if the reviewer asks for a video, record a 60-second screen recording on TestFlight showing the swipe-to-update-taste-profile loop. That's the most legible demonstration of original IP.
+**Additionally**: if the reviewer asks for a video, record a 60-second screen recording on TestFlight showing the era-spanning shuffle (old + new trailers back to back), the swipe-card save/skip, continuous in-place "channel" playback, and one-tap AirPlay. That's the most legible demonstration of original IP.
 
 ---
 
@@ -77,9 +77,9 @@ Less likely, but possible if Apple's matching algorithm flags us against an exis
 Thank you for the review. Trailer Roulette is an original product not affiliated with any other app on the App Store.
 
 Differentiation:
-- The "shuffle / 90-second cycle" UX is unique to Trailer Roulette; we are aware of no other app with this interaction model.
-- The on-device taste profile + weighted shuffle algorithm is our original IP, implemented entirely in the JS layer (visible at app/src/lib/tasteProfile.js and shuffleWeighting.js in our source repository if helpful for review).
-- The Watchlist + Seen-it/Skip-it pairing is a novel combination not present in JustWatch, Reelgood, MovieFone, or any other app we are aware of.
+- The era-spanning "channel" experience — stratified sampling across every decade of cinema with continuous in-place playback — is the core of Trailer Roulette and is implemented entirely in our own code (app/src/lib/tmdb.js, app/local-plugins/trailer-player/).
+- The swipe-card discovery interface (drag to save/skip, tap to play) with our own fling physics is original (app/src/components/SwipeCard.jsx).
+- The combination of an all-eras trailer channel, a local Watchlist, where-to-watch, and one-tap AirPlay — with no account and no tracking — is our own product surface.
 - Branding (name, logo, color palette) is unique. The icon is a custom-designed gold film reel on a dark navy background.
 
 If the reviewer can identify the specific app the listing is being compared to, we'd be happy to provide a side-by-side differentiation document.
@@ -118,9 +118,9 @@ Trailer Roulette uses two external services, both via their public APIs and with
 
 1. **TMDB (The Movie Database)** — https://www.themoviedb.org. Movie metadata (titles, posters, descriptions) is fetched via TMDB's public API. The required attribution is displayed in our App Store description footer and in-app on the About screen: "This product uses the TMDB API but is not endorsed or certified by TMDB."
 
-2. **YouTube** — Trailers play through YouTube's official embeddable player inside SFSafariViewController. We do not download, modify, separate audio from video, or otherwise alter YouTube content. Our usage complies with YouTube's Terms of Service (https://www.youtube.com/static?template=terms).
+2. **YouTube** — Trailers play through YouTube's official IFrame embedded player, hosted on a first-party https page in a native web view; the video streams directly from YouTube to its own player. We do not download, modify, separate audio from video, strip ads, or otherwise alter YouTube content. Our usage complies with YouTube's Terms of Service (https://www.youtube.com/static?template=terms).
 
-We do not host, redistribute, or claim ownership of any third-party content. Trailer Roulette adds value through curation, personalization (on-device taste profile), and discovery UX.
+We do not host, redistribute, or claim ownership of any third-party content. Trailer Roulette adds value through original curation (era-spanning stratified sampling), continuous channel playback, a swipe-card discovery interface, and a local watchlist.
 
 If specific documentation would be helpful, we can provide:
 - TMDB API terms acceptance
@@ -142,10 +142,10 @@ Trailer Roulette does not require any account, login, or credentials. The app la
 To test:
 1. Tap the app icon
 2. Wait for the trailer queue to populate (~2 seconds)
-3. Tap Play to open a trailer
-4. Swipe right or left to react
-5. Tap the heart icon to save to watchlist
-6. Tap the heart icon in the header to view watchlist
+3. Tap the card to play the trailer; it opens fullscreen and auto-advances to the next when it ends
+4. Swipe the card right to save, left to skip (or use the ♥ / ✕ buttons)
+5. Tap the AirPlay button to beam the feed to a TV
+6. Tap the bookmark icon in the top bar to view your watchlist
 
 No demo account is necessary. The app contains no auth flow.
 ```

@@ -1,34 +1,35 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import Player from './Player.jsx';
-import SwipeCard from './SwipeCard.jsx';
-import Watchlist from './Watchlist.jsx';
 import AboutScreen from './AboutScreen.jsx';
+import FunSheet from '../features/FunSheet.jsx';
+import { FEATURES } from '../features/index.js';
 import {
-  discoverMovies, discoverRandomMix, getTrailer, getMovieDetails, pickDiscoverPage,
-  getWatchProviders, toTrailerCandidate, genreNames, backdropUrl, posterUrl,
+  discoverMovies, discoverRandomMix, getTrailer, pickDiscoverPage,
+  toTrailerCandidate, genreNames, backdropUrl, posterUrl,
 } from '../lib/tmdb.js';
 import { uniformShuffle } from '../lib/shuffleWeighting.js';
-import { get, set, KEYS } from '../lib/storage.js';
 import * as airplay from '../lib/airplay.js';
 import * as haptics from '../lib/haptics.js';
-
-// "128" → "2h 8m"; "95" → "1h 35m"; "47" → "47m".
-function formatRuntime(mins) {
-  if (!Number.isFinite(mins) || mins <= 0) return null;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return h ? `${h}h ${m}m` : `${m}m`;
-}
 
 const MAX_TRAILER_SECONDS = 180;
 const DEFAULT_CYCLE_SECONDS = 90;
 const PREFETCH_LOOKAHEAD = 3;
 
+// 1987 → "1980s". A small, fun reminder that the feed spans every decade.
+function decadeLabel(year) {
+  if (!Number.isFinite(year) || year <= 0) return null;
+  return `${Math.floor(year / 10) * 10}s`;
+}
+
 /**
- * The whole app: a randomized, instant feed of every reachable movie trailer.
- * No filters, no accounts. Tap to play, big Skip, one-tap AirPlay. Watchlist
- * and About are lightweight overlays so nothing stands between you and the video.
+ * Trailer Roulette — the whole app, kept deliberately tiny.
+ *
+ * A random, never-ending feed of movie trailers from every genre and every
+ * decade. Two buttons: Play (spin a fresh random trailer) and AirPlay (throw
+ * it on the TV). No filters, no accounts, no algorithm — just press play and
+ * see what comes up. Trailers auto-advance, so it also runs as a hands-free
+ * channel you can leave going.
  */
 export default function TrailerRoulette() {
   const [queue, setQueue] = useState([]);
@@ -37,15 +38,13 @@ export default function TrailerRoulette() {
   const [cycleSeconds, setCycleSeconds] = useState(DEFAULT_CYCLE_SECONDS);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const [watchlistIds, setWatchlistIds] = useState(new Set());
   const [loadError, setLoadError] = useState(null);
   const [retrying, setRetrying] = useState(false);
-  const [showWatchlist, setShowWatchlist] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
-  const [currentProviders, setCurrentProviders] = useState(null);
   const [playSignal, setPlaySignal] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activeFeature, setActiveFeature] = useState(null);
 
-  const swipeRef = useRef(null);
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
   const unplayableKeysRef = useRef(new Set());
@@ -54,9 +53,8 @@ export default function TrailerRoulette() {
   const loadQueueRef = useRef(null);
 
   // Build an era-diverse batch (old + mid + recent), then shuffle uniformly so
-  // the order is pure random. Stratified sampling is what keeps the feed from
-  // over-indexing on recent blockbusters. Falls back to a plain deep-page pull
-  // if the mix comes back thin.
+  // the order is pure random across every decade. Falls back to a plain deep-page
+  // pull if the mix comes back thin.
   const loadQueue = useCallback(async ({ append = false } = {}) => {
     try {
       if (!append) setLoadError(null);
@@ -66,12 +64,10 @@ export default function TrailerRoulette() {
         results = [...(results || []), ...(data.results || [])];
       }
       const ordered = uniformShuffle(results.map(toTrailerCandidate));
-      // Success → clear any pending retry/backoff.
       retryRef.current.attempt = 0;
       clearTimeout(retryRef.current.timer);
 
       if (append) {
-        // Top-up: append fresh, de-duped movies without disturbing playback.
         setQueue((q) => {
           const have = new Set(q.map((m) => m.id));
           return [...q, ...ordered.filter((m) => !have.has(m.id))];
@@ -84,8 +80,8 @@ export default function TrailerRoulette() {
     } catch (err) {
       console.error('[TrailerRoulette] loadQueue failed', err);
       if (!append) setLoadError(err?.message || String(err));
-      // Self-heal: retry with capped exponential backoff so the feed comes
-      // back on its own the moment the network does — no user action needed.
+      // Self-heal: retry with capped exponential backoff so the feed comes back
+      // on its own the moment the network does — no user action needed.
       const attempt = Math.min(retryRef.current.attempt + 1, 6);
       retryRef.current.attempt = attempt;
       const delay = Math.min(1000 * 2 ** (attempt - 1), 30000);
@@ -96,7 +92,6 @@ export default function TrailerRoulette() {
   }, []);
   loadQueueRef.current = loadQueue;
 
-  // Clean up any pending retry timer on unmount.
   useEffect(() => () => clearTimeout(retryRef.current.timer), []);
 
   // Keep the queue topped up so it never runs dry mid-session.
@@ -106,16 +101,9 @@ export default function TrailerRoulette() {
     loadQueue({ append: true }).finally(() => { toppingRef.current = false; });
   }, [queue.length, current, loadQueue]);
 
-  // Boot: load the saved watchlist, then the queue.
+  // Boot.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const watchlist = await get(KEYS.WATCHLIST);
-      if (cancelled) return;
-      setWatchlistIds(new Set((watchlist || []).map((w) => w.id)));
-      await loadQueue();
-    })();
-    return () => { cancelled = true; };
+    loadQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -137,7 +125,7 @@ export default function TrailerRoulette() {
       }
     }
     // Skip movies with no trailer or a known-unplayable key (auto-skip up to 8
-    // deep) so the user never lands on a dead card.
+    // deep) so the feed never lands on a dead card.
     const keyKnownBad = next.youtubeKey && unplayableKeysRef.current.has(next.youtubeKey);
     if ((!next.youtubeKey || keyKnownBad) && depth < 8) {
       setQueue((q) => {
@@ -147,32 +135,12 @@ export default function TrailerRoulette() {
       });
       return;
     }
-    if (next.runtime == null) {
-      try {
-        const details = await getMovieDetails(trailer.id);
-        next = { ...next, runtime: details.runtime };
-      } catch { /* runtime is optional */ }
-    }
     setCurrent(next);
     setCycleSeconds(DEFAULT_CYCLE_SECONDS);
     setSecondsLeft(DEFAULT_CYCLE_SECONDS);
   }, []);
 
-  // "Where to watch" for the current movie (non-blocking; JustWatch via TMDB).
-  useEffect(() => {
-    setCurrentProviders(null);
-    if (!current?.id) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        const p = await getWatchProviders(current.id);
-        if (!cancelled) setCurrentProviders(p);
-      } catch { /* optional */ }
-    })();
-    return () => { cancelled = true; };
-  }, [current?.id]);
-
-  // Prefetch upcoming trailer keys so Skip is instant.
+  // Prefetch upcoming trailer keys so the next spin is instant.
   useEffect(() => {
     if (queue.length < 2) return;
     const lookahead = queue.slice(1, 1 + PREFETCH_LOOKAHEAD);
@@ -194,14 +162,14 @@ export default function TrailerRoulette() {
     return () => { cancelled = true; };
   }, [queue]);
 
-  // Web auto-advance timer (iOS native player owns its own lifecycle).
+  // Web auto-advance timer (the iOS native player owns its own lifecycle).
   useEffect(() => {
     if (Capacitor.getPlatform() === 'ios') return undefined;
     if (!isPlaying || !current) return undefined;
     clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setSecondsLeft((s) => {
-        if (s <= 1) { haptics.light(); advance('skip'); return cycleSeconds; }
+        if (s <= 1) { haptics.light(); advance(); return cycleSeconds; }
         return s - 1;
       });
     }, 1000);
@@ -246,12 +214,8 @@ export default function TrailerRoulette() {
     advance();
   }, [advance]);
 
-  // Native chained to the next trailer in place (continuous playback). Keep
-  // the JS queue + metadata panel in sync without reopening the player.
-  const onAdvanceInPlace = useCallback(() => {
-    haptics.light();
-    advance();
-  }, [advance]);
+  // Native chained to the next trailer in place (continuous playback).
+  const onAdvanceInPlace = useCallback(() => { haptics.light(); advance(); }, [advance]);
 
   const onTrailerDurationKnown = useCallback((duration) => {
     if (!Number.isFinite(duration) || duration <= 0) return;
@@ -260,75 +224,44 @@ export default function TrailerRoulette() {
     setSecondsLeft(s);
   }, []);
 
-  // Idempotently add the current movie to the watchlist (swipe-right / ♥).
-  const saveCurrent = useCallback(async () => {
-    if (!current) return;
-    const watchlist = (await get(KEYS.WATCHLIST)) || [];
-    if (watchlist.some((w) => w.id === current.id)) return;
-    const nextList = [...watchlist, {
-      id: current.id, title: current.title, year: current.year,
-      poster_path: current.poster_path, addedAt: new Date().toISOString(),
-    }];
-    await set(KEYS.WATCHLIST, nextList);
-    setWatchlistIds(new Set(nextList.map((w) => w.id)));
-  }, [current]);
-
-  // Tinder gestures: swipe right = save + next, swipe left = skip.
-  const onLike = useCallback(() => { haptics.medium(); saveCurrent(); advance(); }, [saveCurrent, advance]);
-  const onNope = useCallback(() => { haptics.medium(); advance(); }, [advance]);
-  const onTapPlay = useCallback(() => { setPlaySignal((n) => n + 1); }, []);
-
-  // Keyboard parity for web QA: ← skip, → save.
-  useEffect(() => {
-    const onKey = (e) => {
-      const tag = e.target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
-      if (e.key === 'ArrowRight') swipeRef.current?.fling('like');
-      else if (e.key === 'ArrowLeft') swipeRef.current?.fling('nope');
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // The Play button. First press starts the current (already-random) trailer;
+  // press again while it's playing to spin to a fresh random one. Either way
+  // trailers keep auto-advancing on their own.
+  const onSpin = useCallback(() => {
+    haptics.medium();
+    if (isPlaying) advance();
+    setIsPlaying(true);
+    setPlaySignal((n) => n + 1);
+  }, [isPlaying, advance]);
 
   const onAirPlay = useCallback(async () => {
     haptics.medium();
     try { await airplay.presentRoutePicker(); } catch { /* noop */ }
   }, []);
 
-  const saved = current ? watchlistIds.has(current.id) : false;
-  const providers = currentProviders;
-  const hasWhereToWatch = providers && (providers.flatrate.length > 0 || providers.link);
   const currentArt = current ? (backdropUrl(current.backdrop_path) || posterUrl(current.poster_path)) : null;
   const next = queue[1];
   const nextArt = next ? (backdropUrl(next.backdrop_path) || posterUrl(next.poster_path)) : null;
+  const progress = Math.max(0, Math.min(1, (cycleSeconds - secondsLeft) / cycleSeconds));
+  const era = current ? decadeLabel(current.year) : null;
+  const ActiveComp = activeFeature?.Component;
 
   return (
-    <div className="tr-stage">
+    <div className="tr-stage tr-roulette">
       {/* Thin progress line for the current trailer (web cycle timer). */}
       <div className="tr-progress" aria-hidden="true">
-        <span style={{ transform: `scaleX(${Math.max(0, Math.min(1, (cycleSeconds - secondsLeft) / cycleSeconds))})` }} />
+        <span style={{ transform: `scaleX(${progress})` }} />
       </div>
 
-      {/* Peek of the next trailer, sitting behind the current card so a swipe
-          reveals something already there — never a black void. */}
+      {/* Instant backdrop + a peek of the next, so the stage is never black. */}
+      {currentArt && (
+        <div className="tr-backdrop" aria-hidden="true" style={{ backgroundImage: `url("${currentArt}")` }} />
+      )}
       {nextArt && (
         <div className="tr-next" aria-hidden="true" style={{ backgroundImage: `url("${nextArt}")` }} />
       )}
 
-      {/* The swipeable trailer card: full-bleed video + its info. Drag it like
-          a dating-app card — left to skip, right to save. */}
-      <SwipeCard
-        ref={swipeRef}
-        disabled={!current}
-        onLike={onLike}
-        onNope={onNope}
-        onTap={onTapPlay}
-        resetKey={current?.id ?? 'empty'}
-      >
-        {/* Instant backdrop so the stage is never black while the trailer loads. */}
-        {currentArt && (
-          <div className="tr-backdrop" aria-hidden="true" style={{ backgroundImage: `url("${currentArt}")` }} />
-        )}
+      {!activeFeature && (
         <div className="player-wrap">
           <Player
             trailer={current}
@@ -342,62 +275,56 @@ export default function TrailerRoulette() {
             onDurationKnown={onTrailerDurationKnown}
           />
         </div>
+      )}
 
-        {current && (
-          <div className="tr-cardinfo" key={current.id}>
-            <h2>{current.title}{current.year ? <span className="tr-year"> {current.year}</span> : null}</h2>
-            <div className="tr-badges">
-              {Number.isFinite(current.vote_average) && current.vote_average > 0 && (
-                <span className="tr-badge tr-badge-rating">★ {current.vote_average.toFixed(1)}</span>
-              )}
-              {current.runtime ? <span className="tr-badge">{formatRuntime(current.runtime)}</span> : null}
-              {genreNames(current.genre_ids).slice(0, 2).map((g) => (
-                <span className="tr-badge" key={g}>{g}</span>
-              ))}
-            </div>
-            {hasWhereToWatch && (
-              <p className="tr-watch">
-                {providers.flatrate.length > 0
-                  ? `Streaming on ${providers.flatrate.slice(0, 2).join(', ')}`
-                  : 'Where to watch'}
-                {providers.link && (
-                  <>{' · '}<a href={providers.link} target="_blank" rel="noreferrer">options →</a></>
-                )}
-              </p>
-            )}
-          </div>
-        )}
-      </SwipeCard>
-
-      {/* Minimal top: just the watchlist (with count). About lives inside it. */}
+      {/* Top-right: fun-modes menu (✦) + a small info button (attribution). */}
       <div className="tr-topbar">
-        <button className="tr-glyph" onClick={() => { haptics.light(); setShowWatchlist(true); }} aria-label="Watchlist">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-          </svg>
-          {watchlistIds.size > 0 && <span className="tr-glyph-badge">{watchlistIds.size}</span>}
-        </button>
+        <div className="tr-topbar-right">
+          <button className="tr-glyph" onClick={() => { haptics.light(); setMenuOpen(true); }} aria-label="Fun modes">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3l2.1 5.5L20 9.3l-4.3 3.7L17 19l-5-3-5 3 1.3-6L4 9.3l5.9-.8z" />
+            </svg>
+          </button>
+          <button className="tr-glyph" onClick={() => { haptics.light(); setShowAbout(true); }} aria-label="About">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Dating-app action row: ✕ skip · AirPlay · ♥ save. The swipe gesture
-          does the same; these are the tap-to-decide shortcuts. */}
-      <div className="tr-actions">
-        <button className="tr-act tr-act-nope" onClick={() => swipeRef.current?.fling('nope')} aria-label="Skip" disabled={!current}>
-          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-            <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+      {/* Minimal now-playing: title, year, a genre + decade badge. */}
+      {current && (
+        <div className="tr-cardinfo" key={current.id}>
+          <h2>{current.title}{current.year ? <span className="tr-year"> {current.year}</span> : null}</h2>
+          <div className="tr-badges">
+            {genreNames(current.genre_ids).slice(0, 2).map((g) => (
+              <span className="tr-badge" key={g}>{g}</span>
+            ))}
+            {era ? <span className="tr-badge tr-badge-era">{era}</span> : null}
+          </div>
+        </div>
+      )}
+
+      {/* The two buttons: Play (spin) + AirPlay. */}
+      <div className="tr-roulette-actions">
+        <button
+          className={`tr-rbtn tr-rbtn-play${isPlaying ? ' is-playing' : ''}`}
+          onClick={onSpin}
+          disabled={!current}
+          aria-label={isPlaying ? 'Spin a new random trailer' : 'Play'}
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M9 6v12l9-6z" fill="currentColor" />
           </svg>
+          <span>{isPlaying ? 'Spin' : 'Play'}</span>
         </button>
-        <button className="tr-act tr-act-air" onClick={onAirPlay} aria-label="AirPlay to TV">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <button className="tr-rbtn tr-rbtn-air" onClick={onAirPlay} aria-label="AirPlay to TV">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
             <polygon points="12 15 17 21 7 21 12 15" fill="currentColor" stroke="none" />
           </svg>
           <span>AirPlay</span>
-        </button>
-        <button className={`tr-act tr-act-like${saved ? ' is-on' : ''}`} onClick={() => swipeRef.current?.fling('like')} aria-label="Save" disabled={!current}>
-          <svg viewBox="0 0 24 24" width="30" height="30" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 1 0-7.8 7.8l1.1 1L12 21l7.7-7.6 1.1-1a5.5 5.5 0 0 0 0-7.8z" />
-          </svg>
         </button>
       </div>
 
@@ -411,13 +338,15 @@ export default function TrailerRoulette() {
         </div>
       )}
 
-      {showWatchlist && (
-        <Watchlist
-          onClose={() => setShowWatchlist(false)}
-          onOpenAbout={() => { setShowWatchlist(false); setShowAbout(true); }}
-        />
-      )}
       {showAbout && <AboutScreen onClose={() => setShowAbout(false)} />}
+
+      <FunSheet
+        open={menuOpen}
+        features={FEATURES}
+        onPick={(f) => { haptics.medium(); setMenuOpen(false); setIsPlaying(false); setActiveFeature(f); }}
+        onClose={() => setMenuOpen(false)}
+      />
+      {ActiveComp && <ActiveComp onClose={() => setActiveFeature(null)} />}
     </div>
   );
 }

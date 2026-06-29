@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'app.trailerroulette.ios',
   appName: 'Trailer Roulette',
   webDir: 'dist',
-  bundledWebRuntime: false,
   ios: {
     contentInset: 'always',
     scrollEnabled: true,

@@ -12,6 +12,7 @@ import { loadYouTubeIframeAPI, PlayerState } from '../lib/ytIframeApi.js';
 export default function PlayerWeb({
   trailer,
   isPlaying,
+  muted = false,
   onPlay,
   onPause,
   onEnded,
@@ -52,6 +53,7 @@ export default function PlayerWeb({
         playerVars: {
           autoplay: 1,
           playsinline: 1,
+          mute: muted ? 1 : 0,
           rel: 0,
           modestbranding: 1,
           controls: 1,
@@ -113,6 +115,12 @@ export default function PlayerWeb({
     } catch { /* noop */ }
   }, [isPlaying]);
 
+  useEffect(() => {
+    const p = playerRef.current;
+    if (!p) return;
+    try { if (muted) p.mute?.(); else p.unMute?.(); } catch { /* noop */ }
+  }, [muted]);
+
   if (!trailer?.youtubeKey) {
     return (
       <div className="player player-empty" aria-busy="true">
@@ -127,7 +135,7 @@ export default function PlayerWeb({
         <iframe
           key={trailer.youtubeKey}
           title={trailer.title || 'Trailer'}
-          src={embedUrl(trailer.youtubeKey, { autoplay: isPlaying, mute: false })}
+          src={embedUrl(trailer.youtubeKey, { autoplay: isPlaying, mute: muted })}
           frameBorder="0"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen

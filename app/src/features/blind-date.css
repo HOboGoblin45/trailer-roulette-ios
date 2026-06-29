@@ -1,0 +1,485 @@
+/* ============================================================================
+   Blind Date mode — dark, cinematic, a little mysterious.
+   Scoped to .feat-blind so nothing leaks into sibling fun modes.
+   Global vars used: --gold (#3DA5F4 accent), --bg, --bg-2, --bg-3,
+   --fg, --fg-2, --fg-dim.
+   ========================================================================== */
+
+.feat-blind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Heavily blurred, darkened backdrop so nothing is identifiable on the
+   mystery / playing screens. Sits behind everything. */
+.feat-blind .blind-bg {
+  position: absolute;
+  inset: -40px; /* overscan so blur edges never reveal the page background */
+  background-size: cover;
+  background-position: center;
+  filter: blur(46px) brightness(0.32) saturate(0.7);
+  transform: scale(1.18);
+  opacity: 0.85;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.feat-blind .blind-bg::after {
+  /* extra vignette + tint to fully bury any recognizable shapes */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 30%, rgba(7, 8, 11, 0.35), rgba(7, 8, 11, 0.92)),
+    linear-gradient(180deg, rgba(7, 8, 11, 0.55), rgba(7, 8, 11, 0.85));
+}
+
+.feat-blind .blind-stage {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ---- Shared card shell -------------------------------------------------- */
+.feat-blind .blind-card {
+  width: 100%;
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-3));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 22px;
+  padding: 28px 22px 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.feat-blind .blind-title {
+  font-size: 1.35rem;
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  margin: 4px 0 6px;
+}
+
+.feat-blind .blind-sub {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--fg-2);
+  margin: 0 0 4px;
+}
+
+.feat-blind .blind-emoji {
+  font-size: 2.6rem;
+  margin-bottom: 6px;
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+.feat-blind .blind-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 1rem;
+  min-height: 48px;
+  padding: 13px 18px;
+  border-radius: 14px;
+  width: 100%;
+  margin-top: 12px;
+  transition: transform 0.12s ease, filter 0.12s ease, background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.feat-blind .blind-btn:active {
+  transform: scale(0.97);
+}
+
+.feat-blind .blind-btn-primary {
+  background: var(--gold);
+  color: #04121f;
+  box-shadow: 0 8px 22px rgba(61, 165, 244, 0.32);
+}
+.feat-blind .blind-btn-primary:active {
+  filter: brightness(1.05);
+}
+
+.feat-blind .blind-btn-ghost {
+  background: transparent;
+  color: var(--fg-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+.feat-blind .blind-btn-ghost:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.feat-blind .blind-play {
+  margin-top: 18px;
+  font-size: 1.08rem;
+}
+
+/* ---- Loading ------------------------------------------------------------ */
+.feat-blind .blind-loading {
+  padding-top: 40px;
+  padding-bottom: 38px;
+}
+
+.feat-blind .blind-spinner {
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--gold);
+  animation: blind-spin 0.85s linear infinite;
+}
+
+.feat-blind .blind-loading-text {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--fg);
+  margin: 0 0 4px;
+}
+
+@keyframes blind-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Mystery card ------------------------------------------------------- */
+.feat-blind .blind-mystery {
+  position: relative;
+  overflow: hidden;
+  animation: blind-rise 0.4s ease both;
+}
+
+.feat-blind .blind-kicker {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(61, 165, 244, 0.1);
+  border: 1px solid rgba(61, 165, 244, 0.28);
+  padding: 5px 12px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+
+/* Floating ghostly question marks for the mysterious vibe. */
+.feat-blind .blind-mask {
+  position: relative;
+  height: 96px;
+  margin: 6px auto 10px;
+}
+
+.feat-blind .blind-q {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-size: 4.4rem;
+  font-weight: 900;
+  color: rgba(245, 246, 248, 0.14);
+  text-shadow: 0 0 26px rgba(61, 165, 244, 0.35);
+  transform: translate(-50%, -50%);
+  animation: blind-float 3.6s ease-in-out infinite;
+}
+.feat-blind .blind-q-2 {
+  font-size: 2.2rem;
+  transform: translate(-150%, -30%);
+  color: rgba(61, 165, 244, 0.16);
+  animation-delay: 0.5s;
+  animation-duration: 4.2s;
+}
+.feat-blind .blind-q-3 {
+  font-size: 2.6rem;
+  transform: translate(70%, -10%);
+  color: rgba(245, 246, 248, 0.1);
+  animation-delay: 1.1s;
+  animation-duration: 4.8s;
+}
+
+@keyframes blind-float {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; transform: translate(-50%, -64%); }
+}
+
+/* Fake redacted "info" bars — reinforces that details are hidden. */
+.feat-blind .blind-redactions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin: 18px 0 4px;
+}
+.feat-blind .blind-redact {
+  height: 11px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.08) 6px,
+    rgba(255, 255, 255, 0.03) 6px,
+    rgba(255, 255, 255, 0.03) 12px
+  );
+}
+
+/* ---- Player ------------------------------------------------------------- */
+.feat-blind .blind-player-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 16:9 box for inline web playback. iOS plays fullscreen natively, but the
+   box gives a tidy placeholder while the native modal is up / dismissing. */
+.feat-blind .blind-player-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+
+.feat-blind .blind-player-box iframe,
+.feat-blind .blind-player-box > div {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.feat-blind .blind-watching {
+  font-size: 0.9rem;
+  color: var(--fg-dim);
+  margin: 16px 0 0;
+  text-align: center;
+}
+
+.feat-blind .blind-reveal-now {
+  margin-top: 12px;
+  max-width: 320px;
+}
+
+/* ---- Reveal ------------------------------------------------------------- */
+.feat-blind .blind-reveal {
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.94) translateY(14px);
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.feat-blind .blind-reveal.is-in {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.feat-blind .blind-reveal-hero {
+  position: relative;
+  width: 100%;
+  height: 188px;
+  overflow: hidden;
+}
+
+.feat-blind .blind-reveal-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transform: scale(1.05);
+}
+.feat-blind .blind-reveal-bg-empty {
+  background: radial-gradient(120% 120% at 50% 0%, var(--bg-3), var(--bg));
+}
+.feat-blind .blind-reveal-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(7, 8, 11, 0) 30%, var(--bg-2) 98%);
+}
+
+.feat-blind .blind-reveal-poster {
+  position: absolute;
+  left: 18px;
+  bottom: -34px;
+  width: 88px;
+  height: auto;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+  z-index: 2;
+}
+
+/* A quick light sweep across the hero when the reveal mounts. */
+.feat-blind .blind-reveal-flash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(61, 165, 244, 0.28) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  z-index: 3;
+}
+.feat-blind .blind-reveal.is-in .blind-reveal-flash {
+  animation: blind-sweep 0.9s ease-out 0.15s both;
+}
+@keyframes blind-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+.feat-blind .blind-reveal-body {
+  padding: 16px 20px 22px;
+  text-align: left;
+}
+
+.feat-blind .blind-reveal-tag {
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+
+.feat-blind .blind-reveal-title {
+  font-size: 1.5rem;
+  line-height: 1.18;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+  margin: 0 0 8px;
+}
+.feat-blind .blind-reveal-year {
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+.feat-blind .blind-reveal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.feat-blind .blind-rating {
+  font-weight: 800;
+  color: #ffce47;
+  font-size: 0.98rem;
+}
+
+.feat-blind .blind-genres {
+  font-size: 0.86rem;
+  color: var(--fg-dim);
+}
+
+.feat-blind .blind-overview {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--fg-2);
+  margin: 0 0 6px;
+}
+.feat-blind .blind-overview-empty {
+  font-style: italic;
+  color: var(--fg-dim);
+}
+
+/* ---- Verdict ------------------------------------------------------------ */
+.feat-blind .blind-verdict-prompt {
+  margin: 16px 0 6px;
+  font-weight: 700;
+  color: var(--fg);
+  text-align: center;
+}
+
+.feat-blind .blind-verdict-row {
+  display: flex;
+  gap: 12px;
+}
+.feat-blind .blind-verdict-row .blind-btn {
+  margin-top: 4px;
+}
+
+.feat-blind .blind-btn-into {
+  background: rgba(46, 204, 113, 0.16);
+  color: #6ff0a8;
+  border: 1px solid rgba(46, 204, 113, 0.4);
+}
+.feat-blind .blind-btn-into:active {
+  background: rgba(46, 204, 113, 0.26);
+}
+
+.feat-blind .blind-btn-pass {
+  background: rgba(255, 99, 99, 0.14);
+  color: #ff9a9a;
+  border: 1px solid rgba(255, 99, 99, 0.38);
+}
+.feat-blind .blind-btn-pass:active {
+  background: rgba(255, 99, 99, 0.24);
+}
+
+.feat-blind .blind-verdict-result {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  text-align: center;
+  animation: blind-pop 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.feat-blind .blind-verdict-into {
+  background: rgba(46, 204, 113, 0.12);
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+.feat-blind .blind-verdict-pass {
+  background: rgba(255, 99, 99, 0.1);
+  border: 1px solid rgba(255, 99, 99, 0.28);
+}
+.feat-blind .blind-verdict-line {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.feat-blind .blind-next {
+  margin-top: 18px;
+}
+
+/* ---- Animations --------------------------------------------------------- */
+@keyframes blind-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes blind-pop {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feat-blind .blind-spinner { animation-duration: 1.4s; }
+  .feat-blind .blind-q,
+  .feat-blind .blind-reveal-flash { animation: none; }
+  .feat-blind .blind-reveal {
+    transition: opacity 0.3s ease;
+    transform: none;
+  }
+  .feat-blind .blind-mystery,
+  .feat-blind .blind-verdict-result { animation: none; }
+}

@@ -1,4 +1,4 @@
-# Keywords — v2.0.1 (all-eras discovery)
+# Keywords — v2.9.0 (immersive all-eras channel)
 
 Apple's keyword field is one comma-separated string, no spaces around commas,
 max 100 characters. Apple already indexes the app name + subtitle, so don't

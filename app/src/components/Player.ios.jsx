@@ -29,6 +29,7 @@ export default function PlayerIOS({
   trailer,
   nextTrailer,
   isPlaying,
+  muted = false,
   playSignal,
   onPlay,
   onPause,
@@ -128,6 +129,7 @@ export default function PlayerIOS({
       const result = await TrailerPlayer.openTrailer({
         youtubeKey: trailer.youtubeKey,
         title: trailer.title || '',
+        muted: !!muted,
         nextYoutubeKey: nextTrailer?.youtubeKey || '',
         nextTitle: nextTrailer?.title || '',
       });
@@ -184,7 +186,11 @@ export default function PlayerIOS({
         disabled={!hasTrailer || opening}
         aria-label={hasTrailer ? `Play ${trailer.title || 'trailer'}` : 'No trailer available'}
       >
-        <span className="play-icon" aria-hidden="true">▶</span>
+        <svg className="play-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          {/* Centroid sits at the viewBox center (12,12), so flexbox centering =
+              true optical centering — no per-font margin nudging required. */}
+          <path d="M9 6v12l9-6z" fill="currentColor" />
+        </svg>
         <span className="play-label">
           {opening ? 'Opening…' : (hasTrailer ? 'Play trailer' : 'No trailer')}
         </span>

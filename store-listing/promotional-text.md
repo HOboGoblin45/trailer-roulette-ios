@@ -5,17 +5,17 @@
 ## Live now (in App Store Connect)
 
 ```
-Now with Search and Where to Watch: find any movie or actor, see where it's streaming, and shuffle trailers from every era. No accounts. No tracking.
+An immersive trailer channel: shuffle trailers from every era of cinema, swipe to save your favorites, and beam them to your TV. No accounts. No tracking.
 ```
 
-**Char count: 149 / 170.**
+**Char count: 153 / 170.**
 
 ## Rotation candidates
 Update without a new submission as the product evolves or seasons change.
 
 ### Generic discovery
 ```
-Discover your next movie. Shuffle trailers from every era, search any film or actor, and see where to watch. No accounts, no ads.
+Discover your next movie. Shuffle trailers from every era of cinema, swipe to save, and beam them to your TV. No accounts, no ads.
 ```
 (128 chars)
 

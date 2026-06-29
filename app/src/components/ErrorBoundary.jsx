@@ -53,7 +53,6 @@ export default class ErrorBoundary extends Component {
             fontFamily: '-apple-system, system-ui, sans-serif', cursor: 'pointer',
           }}
         >
-          <span style={{ fontSize: 40 }} aria-hidden="true">🎬</span>
           <span style={{ fontSize: 17, fontWeight: 600 }}>One sec…</span>
           <span style={{ fontSize: 14, opacity: 0.6 }}>Tap to keep watching</span>
         </button>

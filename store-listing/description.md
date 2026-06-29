@@ -1,7 +1,7 @@
-# App Store description — v2.0.1 (all-eras discovery)
+# App Store description — v2.9.0 (immersive all-eras channel)
 
-Mirrors what is live in App Store Connect. Positioning: discover any movie's
-trailer, across every era, then decide what to watch.
+Mirrors what is live in App Store Connect. Positioning: a dead-simple random
+trailer roulette — press Play for a random trailer, AirPlay it to your TV.
 
 ---
 
@@ -20,29 +20,23 @@ Discover your next movie.
 ## Description (≤4000 chars)
 
 ```
-Trailer Roulette is the fun way to discover your next movie. Spin through trailers from every era — timeless classics and brand-new releases alike — and let the app learn what you love.
+Trailer Roulette is the fun way to discover your next movie. Press Play and a random trailer comes up — any genre, any decade, from timeless classics to brand-new releases. Press again to spin a fresh one.
 
 WHAT YOU GET
 
-• Endless shuffle. Tap Play and the trailer opens in a clean fullscreen player. When it ends, the next one queues up. Swipe to skip what doesn't grab you.
+• Two buttons, that's it. Play spins a random trailer; AirPlay throws it on your TV. No filters, no accounts, no algorithm.
 
-• Every era of cinema. The catalog spans the 1970s through today, drawn from thousands of films. Want to narrow it? Flip to Classic (pre-2010) or Modern, or filter by genre and decade.
+• Every era of cinema. The 1970s through today, drawn from thousands of films. The next trailer is always a surprise.
 
-• Search anything. Jump straight to a specific movie, or pull up an actor and shuffle through their filmography.
+• Lean back. Trailers roll one into the next, so it doubles as a hands-free channel you can leave running.
 
-• Where to watch. See which streaming services carry each movie, so you can go from trailer to play in seconds.
-
-• Watchlist. Tap the heart to save any movie for later. Your list, on your device, no account needed.
-
-• Seen it / Skip it swipes. Right for what you loved, left for what you didn't. The app builds a private taste profile right on your phone and tilts future shuffles toward what you'll likely love. Nothing leaves the device.
-
-• No accounts. No tracking. No ads. Everything stays on your phone.
+• No accounts. No tracking. No ads. Nothing leaves your phone.
 
 ABOUT TRAILERS
 
-Trailers play via YouTube's official embedded player. Trailer Roulette doesn't host, copy, or modify trailers — it curates the feed and learns what you love.
+Trailers play via YouTube's official embedded player. Trailer Roulette doesn't host, copy, or modify trailers.
 
-Movie data from TMDB. Streaming availability from JustWatch. This product uses the TMDB API but is not endorsed or certified by TMDB.
+Movie data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 Questions or feedback: crescicharles@gmail.com
 ```

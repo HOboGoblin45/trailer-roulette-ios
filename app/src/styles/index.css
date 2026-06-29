@@ -98,69 +98,6 @@ a { color: var(--gold); text-decoration: none; }
   padding-bottom: var(--sa-bottom);
 }
 
-/* ───────── Header (iOS large-title nav-bar pattern) ───────── */
-.app-header {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  background: rgba(14, 23, 38, 0.78);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid var(--hairline);
-  padding-top: var(--sa-top);
-}
-.app-header-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  height: var(--header-h);
-  padding: 0 max(4px, var(--sa-right)) 0 max(4px, var(--sa-left));
-}
-.app-title {
-  font-family: var(--font-display);
-  font-size: 17px;            /* iOS nav-bar title */
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  text-align: center;
-  margin: 0;
-}
-.app-title .accent {
-  color: var(--gold);
-  font-style: italic;
-  font-family: 'New York', 'Times New Roman', serif;
-  font-weight: 700;
-}
-.header-btn {
-  font-size: 22px;
-  position: relative;
-  padding: 0;
-  color: var(--gold);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.watchlist-btn .badge {
-  position: absolute;
-  top: 4px;
-  right: 2px;
-  background: var(--gold);
-  color: var(--bg);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 10px;
-  min-width: 16px;
-  line-height: 14px;
-  letter-spacing: 0;
-}
-.cycle-bar {
-  height: 2px;
-  background: var(--gold);
-  transform-origin: left center;
-  transform: scaleX(0);
-  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 /* ───────── Player ───────── */
 .player-wrap {
   position: relative;
@@ -223,7 +160,7 @@ a { color: var(--gold); text-decoration: none; }
     0 1px 2px rgba(0, 0, 0, 0.3),
     0 4px 12px rgba(212, 175, 55, 0.2);
 }
-.player-play-button .play-icon { font-size: 14px; }
+.player-play-button .play-icon { width: 16px; height: 16px; display: block; flex: 0 0 auto; }
 .player-play-button:disabled {
   background: var(--bg-3);
   color: var(--fg-dim);
@@ -283,214 +220,6 @@ a { color: var(--gold); text-decoration: none; }
 .control-btn:active { transform: scale(0.92); }
 .control-btn.shuffle { font-size: 22px; }
 .cast-btn.active { color: var(--gold); }
-
-/* ───────── Swipe overlay ───────── */
-.swipe-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: transparent;
-  transition: transform 0.05s linear;
-  pointer-events: auto;
-}
-.swipe-indicator {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 12px 20px;
-  border-radius: var(--radius);
-  font-size: 17px;
-  font-weight: 600;
-  pointer-events: none;
-  letter-spacing: -0.01em;
-  backdrop-filter: blur(12px);
-}
-.swipe-indicator.right {
-  right: 16px;
-  background: rgba(48, 209, 88, 0.92);
-  color: #0F2A1A;
-}
-.swipe-indicator.left {
-  left: 16px;
-  background: rgba(255, 69, 58, 0.92);
-  color: #fff;
-}
-
-/* ───────── Meta (iOS Title 1 / Subhead pattern) ───────── */
-.meta {
-  padding: 16px 20px 4px;
-  position: relative;
-}
-.meta h2 {
-  margin: 0 0 6px;
-  font-family: var(--font-display);
-  font-size: 22px;             /* iOS Title 2 */
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-.meta .year {
-  color: var(--fg-dim);
-  font-weight: 400;
-}
-.meta .overview {
-  color: var(--fg-2);
-  font-size: 15px;             /* iOS Subheadline */
-  letter-spacing: -0.005em;
-  margin: 0;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.cycle-counter {
-  position: absolute;
-  top: 18px;
-  right: 20px;
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  color: var(--gold);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-/* ───────── Filters (iOS chip pattern + segmented control) ───────── */
-.filters { padding: 12px 0 8px; }
-
-/* Era toggle — iOS-style segmented control */
-.era-toggle {
-  display: flex;
-  margin: 0 16px 10px;
-  padding: 3px;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  gap: 2px;
-}
-.era-segment {
-  flex: 1 1 0;
-  min-height: 32px;
-  min-width: 0;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--fg-2);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  transition: background 0.18s ease, color 0.18s ease;
-}
-.era-segment.active {
-  background: var(--bg-3);
-  color: var(--fg);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
-}
-
-.filters-row {
-  display: flex;
-  gap: 8px;
-  padding: 4px 16px;
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-}
-.filters-row::-webkit-scrollbar { display: none; }
-.chip {
-  flex: 0 0 auto;
-  min-height: 34px;
-  min-width: 0;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: var(--bg-2);
-  color: var(--fg);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  border: 1px solid var(--hairline);
-  scroll-snap-align: start;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.chip.active {
-  background: var(--gold);
-  color: var(--bg);
-  font-weight: 600;
-  border-color: var(--gold);
-}
-.chip-clear {
-  border-color: var(--hairline-strong);
-  color: var(--fg-dim);
-}
-
-/* ───────── Up Next (iOS-style sheet) ───────── */
-.up-next {
-  position: fixed;
-  bottom: var(--sa-bottom);
-  left: 0;
-  right: 0;
-  background: rgba(26, 36, 64, 0.94);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-top-left-radius: var(--radius-xl);
-  border-top-right-radius: var(--radius-xl);
-  border-top: 1px solid var(--hairline);
-  z-index: 4;
-  transform: translateY(calc(100% - 52px));
-  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.25);
-}
-.up-next.expanded {
-  transform: translateY(0);
-  max-height: 70vh;
-  overflow-y: auto;
-}
-.up-next-handle {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 0 6px;
-}
-.handle-bar {
-  width: 36px;
-  height: 5px;
-  background: rgba(255,255,255,0.3);
-  border-radius: 3px;
-  margin-bottom: 6px;
-}
-.handle-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg-2);
-  letter-spacing: -0.01em;
-}
-.up-next-list {
-  list-style: none;
-  margin: 0;
-  padding: 4px 16px 20px;
-}
-.up-next-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 8px 12px;
-  background: rgba(255,255,255,0.04);
-  border-radius: var(--radius);
-  margin-bottom: 6px;
-  text-align: left;
-  border: 1px solid transparent;
-  transition: background 0.15s ease;
-}
-.up-next-item:active {
-  background: rgba(255,255,255,0.08);
-}
-.up-next-item img {
-  width: 44px;
-  height: 66px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-}
 
 /* ───────── Screens (Watchlist / About) — sheet-style headers ───────── */
 .screen {
@@ -709,113 +438,6 @@ a { color: var(--gold); text-decoration: none; }
   .up-next-list[hidden] { display: block; }
   .up-next-handle { display: none; }
 }
-
-/* ───────── Header right-side button group ───────── */
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* ───────── Meta badges (rating · runtime · genres) ───────── */
-.meta-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 2px 0 8px;
-}
-.meta-badges .badge {
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: var(--bg-3);
-  color: var(--fg-2);
-  white-space: nowrap;
-}
-.meta-badges .badge-rating { color: var(--gold); }
-
-/* ───────── Where to watch ───────── */
-.where-to-watch {
-  font-size: 13px;
-  color: var(--fg-2);
-  margin: 8px 0 0;
-}
-.where-to-watch a { color: var(--gold); text-decoration: none; }
-.where-to-watch a:active { color: var(--gold-2); }
-
-/* ───────── Search screen ───────── */
-.search-input {
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  margin: 0 4px;
-  padding: 0 14px;
-  border: none;
-  border-radius: 999px;
-  background: var(--bg-3);
-  color: var(--fg);
-  font-size: 16px; /* >=16px avoids iOS input zoom */
-  font-family: var(--font);
-  -webkit-appearance: none;
-}
-.search-input::placeholder { color: var(--fg-dim); }
-.search-input:focus { outline: 2px solid var(--gold); }
-
-.search-hint {
-  color: var(--fg-dim);
-  text-align: center;
-  padding: 32px 24px;
-}
-.search-group { padding: 0 16px; }
-.search-section {
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--fg-dim);
-  margin: 16px 0 8px;
-}
-.search-people, .search-movies { list-style: none; margin: 0; padding: 0; }
-
-.search-person, .search-movie {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 8px;
-  border: none;
-  background: transparent;
-  color: var(--fg);
-  text-align: left;
-  border-radius: var(--radius-sm);
-}
-.search-person:active, .search-movie:active { background: var(--bg-2); }
-.search-person img, .search-movie img {
-  width: 44px;
-  height: 64px;
-  object-fit: cover;
-  border-radius: 6px;
-  flex-shrink: 0;
-  background: var(--bg-3);
-}
-.search-person img { width: 48px; height: 48px; border-radius: 50%; }
-.search-avatar-fallback, .search-poster-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--bg-3);
-  color: var(--gold);
-  flex-shrink: 0;
-}
-.search-poster-fallback { width: 44px; height: 64px; border-radius: 6px; }
-.search-person-name { font-size: 16px; font-weight: 600; }
-.search-movie-meta { display: flex; flex-direction: column; gap: 2px; }
-.search-movie-title { font-size: 16px; font-weight: 600; }
-.search-movie-meta small { color: var(--fg-dim); font-size: 13px; }
 
 /* ───────── Reduced motion preference ───────── */
 @media (prefers-reduced-motion: reduce) {
@@ -1135,61 +757,6 @@ html, body { height: 100%; }
 .watchlist-card { background: var(--bg-2); }
 .remove-btn { color: var(--danger); }
 
-/* ── Bottom tab bar ── */
-.tab-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.tab-bar {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  background: rgba(255,255,255,0.94);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-top: 1px solid var(--hairline);
-  padding-bottom: var(--sa-bottom);
-  padding-left: var(--sa-left);
-  padding-right: var(--sa-right);
-}
-.tab-bar-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 7px 0 5px;
-  min-width: 0;
-  min-height: 0;
-  color: var(--fg-dim);
-  background: transparent;
-  transition: color 0.15s ease;
-}
-.tab-bar-item.active { color: var(--gold); }
-.tab-bar-icon { position: relative; display: flex; }
-.tab-bar-label { font-size: 10px; font-weight: 600; }
-.tab-bar-badge {
-  position: absolute;
-  top: -5px; right: -9px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  min-width: 16px;
-  padding: 2px 4px;
-  border-radius: 999px;
-  text-align: center;
-}
-
-/* Filters tab spacing + a text "Done" button */
-.filters-screen .filters { padding-top: 4px; }
-.filters-screen .screen-header .back-btn { width: auto; padding: 0 8px; font-size: 16px; font-weight: 600; }
-
 /* ═══════════ v2.3 SIMPLIFIED single-screen feed ═══════════ */
 
 /* No tab bar now — the trailer screen owns the whole viewport and scrolls. */
@@ -1309,7 +876,7 @@ html, body { height: 100%; background: #000; }
   box-shadow: 0 10px 34px rgba(0,0,0,0.55);
   animation: none;
 }
-.tr-stage .player-play-button .play-icon { font-size: 30px; margin-left: 5px; }
+.tr-stage .player-play-button .play-icon { width: 34px; height: 34px; margin: 0; }
 .tr-stage .player-play-button .play-label { display: none; }
 .tr-stage .player-play-button:disabled { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); }
 .tr-stage .player-hint { color: rgba(255,255,255,0.85); text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
@@ -1423,7 +990,7 @@ html, body { height: 100%; background: #000; }
 
 /* ═══════════ v2.6 TINDER swipe card ═══════════ */
 /* The trailer is a card you drag like a dating app: left to skip, right to
-   save, tap to play. Floating ✕ / AirPlay / ♥ row mirrors the gestures. */
+   save, tap to play. Floating close / AirPlay / save row mirrors the gestures. */
 
 .tr-card {
   position: absolute; inset: 0; z-index: 1;
@@ -1512,3 +1079,72 @@ html, body { height: 100%; background: #000; }
   filter: brightness(0.32) saturate(0.9) blur(2px);
   transform: scale(0.96);
 }
+
+/* ═══════════ v3.0 — pure two-button roulette ═══════════ */
+/* Random trailers, any genre/decade. Two buttons: Play (spin) + AirPlay. */
+
+.tr-roulette .tr-badge-era { background: rgba(61,165,244,0.20); color: #fff; }
+
+.tr-roulette-actions {
+  position: absolute; left: 0; right: 0; z-index: 6;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 0 20px; pointer-events: none;
+}
+.tr-roulette-actions > * { pointer-events: auto; }
+
+.tr-rbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  height: 60px; padding: 0 26px; border-radius: 999px;
+  font-size: 17px; font-weight: 800; letter-spacing: -0.01em;
+  color: #fff; border: 0; cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+.tr-rbtn:active { transform: scale(0.96); }
+.tr-rbtn:disabled { opacity: 0.5; }
+.tr-rbtn svg { display: block; }
+
+/* Play — the hero. A gentle glow while idle says "press me". */
+.tr-rbtn-play {
+  flex: 1 1 0; max-width: 300px;
+  background: var(--gold);
+  box-shadow: 0 10px 30px rgba(61,165,244,0.45);
+  animation: trPlayGlow 2.6s ease-in-out infinite;
+}
+.tr-rbtn-play.is-playing { animation: none; }
+@keyframes trPlayGlow {
+  0%, 100% { box-shadow: 0 8px 24px rgba(61,165,244,0.32); }
+  50%      { box-shadow: 0 12px 40px rgba(61,165,244,0.6); }
+}
+
+/* AirPlay — quieter, outlined. */
+.tr-rbtn-air {
+  flex: 0 0 auto;
+  color: var(--gold);
+  background: rgba(61,165,244,0.14);
+  border: 1px solid rgba(61,165,244,0.45);
+}
+
+/* ═══════════ v3.1 — fun modes (feature overlays) ═══════════ */
+/* Shared base for every full-screen "fun mode". Each mode adds its own classes
+   in its own CSS file; this just gives a consistent shell + close button. */
+.feat {
+  position: fixed; inset: 0; z-index: 30;
+  background: radial-gradient(120% 90% at 50% 0%, #14161C 0%, #07080B 72%);
+  color: var(--fg);
+  display: flex; flex-direction: column;
+  padding: max(env(safe-area-inset-top, 0px), 20px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  animation: featIn 0.28s ease both;
+}
+@keyframes featIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.feat-close {
+  position: absolute; top: max(env(safe-area-inset-top, 0px), 14px); right: 14px; z-index: 2;
+  width: 40px; height: 40px; min-width: 0; min-height: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.16);
+  font-size: 18px; cursor: pointer; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.feat-close:active { transform: scale(0.92); }
+.feat-coming { margin: auto; text-align: center; color: var(--fg-2); }
+.feat-coming h2 { font-size: 26px; margin: 0 0 8px; color: var(--fg); }

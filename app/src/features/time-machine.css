@@ -1,0 +1,451 @@
+/* ========================================================================
+   Time Machine mode — retro-futurist "drop into a random year" channel.
+   Dark base, glowing monospace year readout, subtle scanlines.
+   Scoped to .feat-time so it never leaks into other modes.
+   Accent (--gold) is repurposed here as the time-circuit glow.
+   ======================================================================== */
+
+.feat-time {
+  --tm-glow: var(--gold, #3da5f4);
+  --tm-glow-soft: rgba(61, 165, 244, 0.35);
+  --tm-glow-faint: rgba(61, 165, 244, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(61, 165, 244, 0.10), transparent 60%),
+    radial-gradient(120% 90% at 50% 120%, rgba(61, 165, 244, 0.08), transparent 55%),
+    var(--bg, #07080b);
+  overflow: hidden;
+}
+
+/* ---- atmosphere: faint moving scanlines + vignette -------------------- */
+.time-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.035) 0px,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+  animation: time-scan 8s linear infinite;
+}
+@keyframes time-scan {
+  from { background-position-y: 0; }
+  to { background-position-y: 240px; }
+}
+
+/* ======================================================================
+   INTRO / SPIN / LOADING (shared "console" layout)
+   ====================================================================== */
+.time-intro {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 460px;
+  padding: 0 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  animation: time-fade-in 0.4s ease both;
+}
+
+@keyframes time-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.time-eyebrow {
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: var(--fg-dim, #7b8494);
+  text-transform: uppercase;
+}
+.time-eyebrow-live {
+  color: var(--tm-glow);
+  animation: time-eyebrow-pulse 1.1s ease-in-out infinite;
+}
+@keyframes time-eyebrow-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ---- the big glowing year readout ------------------------------------ */
+.time-readout {
+  position: relative;
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: clamp(64px, 26vw, 132px);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: var(--fg, #f5f6f8);
+  padding: 6px 4px;
+  user-select: none;
+}
+.time-readout-digits {
+  position: relative;
+  z-index: 2;
+  color: var(--tm-glow);
+  text-shadow:
+    0 0 8px var(--tm-glow-soft),
+    0 0 22px var(--tm-glow-soft),
+    0 0 48px var(--tm-glow-faint);
+  font-variant-numeric: tabular-nums;
+}
+/* Soft blurred duplicate beneath for a heavier bloom. */
+.time-readout-glow {
+  position: absolute;
+  inset: 6px 4px;
+  z-index: 1;
+  color: var(--tm-glow);
+  filter: blur(14px);
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-readout[data-spinning="true"] .time-readout-digits {
+  text-shadow:
+    0 0 10px var(--tm-glow),
+    0 0 26px var(--tm-glow-soft),
+    0 0 60px var(--tm-glow-soft);
+}
+.time-readout[data-landed="true"] .time-readout-digits {
+  animation: time-land 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes time-land {
+  0% { transform: scale(1.25); filter: brightness(1.8); }
+  60% { transform: scale(0.97); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+/* flicker while spinning */
+.time-flicker {
+  animation: time-flicker 0.12s steps(2) infinite;
+}
+@keyframes time-flicker {
+  0% { opacity: 1; transform: translateY(0); }
+  50% { opacity: 0.72; transform: translateY(-1px); }
+  100% { opacity: 1; transform: translateY(0.5px); }
+}
+
+.time-tagline {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg-2, #aeb6c4);
+}
+
+/* ---- Travel button --------------------------------------------------- */
+.time-travel-btn {
+  margin-top: 6px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 200px;
+  min-height: 60px;
+  padding: 12px 30px;
+  border: 1px solid var(--tm-glow-soft);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(61, 165, 244, 0.18), rgba(61, 165, 244, 0.06)),
+    var(--bg-2, #16181f);
+  color: var(--fg, #f5f6f8);
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(61, 165, 244, 0.08),
+    0 8px 30px rgba(0, 0, 0, 0.45),
+    0 0 28px var(--tm-glow-faint);
+  transition: transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.time-travel-btn:hover {
+  border-color: var(--tm-glow);
+  box-shadow:
+    0 0 0 1px var(--tm-glow-soft),
+    0 8px 34px rgba(0, 0, 0, 0.5),
+    0 0 40px var(--tm-glow-soft);
+}
+.time-travel-btn:active {
+  transform: translateY(1px) scale(0.985);
+}
+.time-travel-btn-label {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.time-travel-btn-sub {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--fg-dim, #7b8494);
+}
+
+/* ---- loading dots ---------------------------------------------------- */
+.time-loader {
+  display: inline-flex;
+  gap: 9px;
+  margin-top: 2px;
+}
+.time-loader-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tm-glow);
+  box-shadow: 0 0 10px var(--tm-glow-soft);
+  animation: time-bounce 1s ease-in-out infinite;
+}
+.time-loader-dot:nth-child(2) { animation-delay: 0.15s; }
+.time-loader-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes time-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+  40% { transform: translateY(-8px); opacity: 1; }
+}
+
+/* ======================================================================
+   PLAYING — full-bleed player with a glassy info overlay
+   ====================================================================== */
+.time-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+}
+
+/* The player fills as much as possible; on web it plays inline here. */
+.time-stage-player {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.time-stage-player > * {
+  width: 100%;
+  height: 100%;
+}
+/* Make any iframe/video the player drops in cover the box. */
+.time-stage-player iframe,
+.time-stage-player video {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  border: 0;
+}
+
+/* ---- overlay: badge, now playing, up-next, controls ------------------ */
+.time-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none; /* let the player area breathe; re-enable on controls */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top, 0px) + 58px) 16px
+    calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+
+/* glowing year badge, top-left */
+.time-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--tm-glow-soft);
+  background: rgba(7, 8, 11, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  box-shadow: 0 0 22px var(--tm-glow-faint);
+  animation: time-fade-in 0.4s ease both;
+}
+.time-badge-star {
+  color: var(--tm-glow);
+  font-size: 16px;
+  text-shadow: 0 0 10px var(--tm-glow-soft);
+  animation: time-twinkle 2.4s ease-in-out infinite;
+}
+@keyframes time-twinkle {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+.time-badge-year {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--fg, #f5f6f8);
+  font-variant-numeric: tabular-nums;
+}
+
+/* bottom cluster wrapper so now-playing + up-next + controls sit together */
+.time-overlay > .time-nowplaying,
+.time-overlay > .time-upnext,
+.time-overlay > .time-controls {
+  pointer-events: auto;
+}
+
+/* push the lower content to the bottom while badge stays top */
+.time-nowplaying {
+  margin-top: auto;
+  text-align: left;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.9);
+  animation: time-fade-in 0.45s ease both;
+}
+.time-nowplaying-title {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--fg, #f5f6f8);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.time-nowplaying-meta {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.time-chip {
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 246, 248, 0.18);
+  background: rgba(33, 36, 45, 0.6);
+  color: var(--fg-2, #aeb6c4);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.time-chip-dim {
+  color: var(--fg-dim, #7b8494);
+  border-color: rgba(123, 132, 148, 0.3);
+}
+
+/* up next */
+.time-upnext {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 12px 8px 8px;
+  border-radius: 12px;
+  background: rgba(7, 8, 11, 0.5);
+  border: 1px solid rgba(245, 246, 248, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  text-align: left;
+  animation: time-fade-in 0.5s ease both;
+}
+.time-upnext-poster {
+  width: 38px;
+  height: 56px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--bg-3, #21242d);
+}
+.time-upnext-poster-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tm-glow);
+  font-size: 18px;
+  box-shadow: inset 0 0 0 1px var(--tm-glow-faint);
+}
+.time-upnext-text {
+  min-width: 0;
+}
+.time-upnext-label {
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tm-glow);
+  opacity: 0.85;
+}
+.time-upnext-title {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg, #f5f6f8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70vw;
+}
+
+/* controls */
+.time-controls {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+}
+.time-control-btn {
+  flex: 1 1 0;
+  min-height: 52px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  border: 1px solid rgba(245, 246, 248, 0.16);
+  background: rgba(22, 24, 31, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--fg, #f5f6f8);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.2s ease, background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.time-control-btn:active {
+  transform: translateY(1px) scale(0.985);
+}
+.time-control-btn-primary {
+  flex: 1.3 1 0;
+  border-color: var(--tm-glow-soft);
+  background:
+    linear-gradient(180deg, rgba(61, 165, 244, 0.22), rgba(61, 165, 244, 0.07)),
+    rgba(22, 24, 31, 0.78);
+  box-shadow: 0 0 26px var(--tm-glow-faint);
+}
+.time-control-btn-primary:hover {
+  border-color: var(--tm-glow);
+  box-shadow: 0 0 34px var(--tm-glow-soft);
+}
+
+/* ---- reduced motion: kill the heavy animations ----------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .time-scanlines,
+  .time-flicker,
+  .time-eyebrow-live,
+  .time-badge-star,
+  .time-loader-dot,
+  .time-readout[data-landed="true"] .time-readout-digits {
+    animation: none !important;
+  }
+}
