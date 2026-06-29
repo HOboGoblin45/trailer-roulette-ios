@@ -68,7 +68,6 @@ function labelPos(i) {
 }
 
 const rand = (n) => Math.floor(Math.random() * n);
-const pick = (arr) => arr[rand(arr.length)];
 
 export default function RouletteWheel({ onClose }) {
   const [phase, setPhase] = useState(PHASE.IDLE);
@@ -87,6 +86,9 @@ export default function RouletteWheel({ onClose }) {
   useEffect(() => {
     return () => {
       if (settleTimer.current) clearTimeout(settleTimer.current);
+      // liveRef is a plain invalidation counter, not a DOM node — using its
+      // current value on unmount is intentional.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       liveRef.current++; // invalidate any in-flight fetch on unmount
     };
   }, []);
@@ -106,7 +108,6 @@ export default function RouletteWheel({ onClose }) {
         if (Array.isArray(data?.results)) pool = pool.concat(data.results);
       } catch (e) {
         // Try the next page; only bail if we end up with nothing.
-        // eslint-disable-next-line no-console
         console.warn('[wheel] discoverMovies failed', e);
       }
     }
@@ -131,7 +132,6 @@ export default function RouletteWheel({ onClose }) {
           return cand;
         }
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.warn('[wheel] getTrailer failed', e);
       }
     }

@@ -78,7 +78,7 @@ const freshMarks = () => new Set([FREE_INDEX]);
 
 export default function TropeBingo({ onClose }) {
   const [seed, setSeed] = useState(0); // bump to reshuffle the board
-  const cells = useMemo(() => buildCard(), [seed]);
+  const cells = useMemo(() => { void seed; return buildCard(); }, [seed]);
 
   const [marked, setMarked] = useState(freshMarks);
   // Which win-lines have already fired, so each line only celebrates once.

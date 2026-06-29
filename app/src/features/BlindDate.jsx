@@ -185,7 +185,7 @@ export default function BlindDate({ onClose }) {
           <div className="blind-card blind-error">
             <h2 className="blind-title">No match right now</h2>
             <p className="blind-sub">
-              Couldn't line up a trailer. The projector might be jammed — give it
+              Couldn&apos;t line up a trailer. The projector might be jammed — give it
               another spin.
             </p>
             <button className="blind-btn blind-btn-primary" onClick={nextDate}>
@@ -303,7 +303,7 @@ function RevealCard({ movie, shown, verdict, onVerdict, onNext }) {
 
         {!verdict ? (
           <>
-            <p className="blind-verdict-prompt">So… what's the verdict?</p>
+            <p className="blind-verdict-prompt">So… what&apos;s the verdict?</p>
             <div className="blind-verdict-row">
               <button
                 className="blind-btn blind-btn-into"
