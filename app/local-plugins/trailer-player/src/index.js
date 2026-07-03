@@ -18,14 +18,18 @@ import { registerPlugin } from '@capacitor/core';
  *   await TrailerPlayer.enqueueNext({ youtubeKey, title? })
  *     → { queued: boolean, reason? }    // primes the in-place chain target
  *
+ *   await TrailerPlayer.setMuted({ muted })
+ *     → { applied: boolean, muted? }    // live mute/unmute of the open player
+ *
  *   await TrailerPlayer.closeTrailer()
  *     → { closed: boolean }
  *
  * Events (addListener):
- *   'trailerEvent' → { event, youtubeKey, from? }
+ *   'trailerEvent' → { event, youtubeKey, from?, cause? }
  *     event ∈ 'started'  (playback began)
  *           | 'advanced' (auto-chained to next trailer on end / error)
  *           | 'skipped'  (user tapped in-player Skip → chained to next)
+ *     cause ∈ 'ended' | 'unplayable' | 'user' (why an advance happened)
  */
 const TrailerPlayer = registerPlugin('TrailerPlayer', {
   web: {
@@ -37,6 +41,7 @@ const TrailerPlayer = registerPlugin('TrailerPlayer', {
       return { dismissed: true, reason: 'web-fallback', youtubeKey };
     },
     enqueueNext: async () => ({ queued: false, reason: 'web-fallback' }),
+    setMuted: async () => ({ applied: false, reason: 'web-fallback' }),
     closeTrailer: async () => ({ closed: false, reason: 'web-fallback' }),
   },
 });

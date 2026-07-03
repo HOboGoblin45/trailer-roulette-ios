@@ -35,6 +35,10 @@ export default function PlayerIOS({
   onPause,
   onEnded,
   onAdvanceInPlace,
+  onClosed,        // (reason) => void — modal dismissed for ANY reason. Modes
+                   // use this (not onPause) for their "done watching" step.
+  onUnplayable,    // (youtubeKey) => void — a video id auto-skipped in place
+  onMuteChanged,   // (muted) => void — user toggled sound inside the player
 }) {
   const openingRef = useRef(false);   // true while the native modal is open
   const sessionRef = useRef(false);   // true once the user has started watching
@@ -44,8 +48,12 @@ export default function PlayerIOS({
   // Latest callbacks without re-subscribing the native listener.
   const onAdvanceRef = useRef(onAdvanceInPlace);
   const onPlayRef = useRef(onPlay);
+  const onUnplayableRef = useRef(onUnplayable);
+  const onMuteChangedRef = useRef(onMuteChanged);
   useEffect(() => { onAdvanceRef.current = onAdvanceInPlace; }, [onAdvanceInPlace]);
   useEffect(() => { onPlayRef.current = onPlay; }, [onPlay]);
+  useEffect(() => { onUnplayableRef.current = onUnplayable; }, [onUnplayable]);
+  useEffect(() => { onMuteChangedRef.current = onMuteChanged; }, [onMuteChanged]);
 
   // Reset error when the trailer changes.
   useEffect(() => { setError(null); }, [trailer?.youtubeKey]);
@@ -73,9 +81,16 @@ export default function PlayerIOS({
             // Native chained to the next trailer in place. Advance the JS
             // queue (records "seen") so the metadata panel matches what's
             // now playing — the modal never closed, so we do NOT reopen.
+            // If native skipped because the video was dead, record it so
+            // that id never resurfaces this session.
+            if (evt?.cause === 'unplayable' && evt?.from) {
+              onUnplayableRef.current?.(evt.from);
+            }
             onAdvanceRef.current?.('seen');
           } else if (event === 'skipped') {
             onAdvanceRef.current?.('skip');
+          } else if (event === 'muteChanged') {
+            onMuteChangedRef.current?.(!!evt?.muted);
           }
         });
       } catch {
@@ -104,6 +119,14 @@ export default function PlayerIOS({
       sessionRef.current = false;
     }
   }, [isPlaying]);
+
+  // Live mute/unmute while the modal is open (Cinema Mode's toggle, or any
+  // parent flipping `muted` mid-session). The open call itself already
+  // carries the initial value.
+  useEffect(() => {
+    if (!openingRef.current) return;
+    TrailerPlayer.setMuted({ muted: !!muted }).catch(() => {});
+  }, [muted]);
 
   // Continuous auto-reopen: when a new trailer becomes current while a
   // session is active and the modal is closed (the fallback path), reopen
@@ -137,14 +160,17 @@ export default function PlayerIOS({
       onPause?.();
 
       const reason = String(result?.reason || '');
-      if (reason === 'user') {
-        // User chose to stop. End the session; stay on the current movie.
+      if (reason === 'user' || reason === 'closed') {
+        // User chose to stop (or the app closed the player). End the
+        // session; stay on the current movie.
         sessionRef.current = false;
+        onClosed?.(reason);
         return;
       }
       const unplayable = reason.startsWith('unplayable');
       // Fallback close (ended / skip / unplayable with nothing primed):
       // advance the queue; the auto-reopen effect plays the next one.
+      onClosed?.(reason);
       onEnded?.({ unplayable, youtubeKey: result?.youtubeKey || trailer.youtubeKey, reason });
     } catch (e) {
       const msg = e?.message || String(e);

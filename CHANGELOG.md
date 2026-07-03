@@ -4,6 +4,41 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [2.11.0] — 2026-07-02
+
+Liquid Glass redesign + a full-codebase bug-fix pass.
+
+### Added
+- **Native mute support** in the trailer player: `openTrailer({ muted })` now
+  actually mutes (proxy `?mute=1`), a speaker toggle in the player chrome, and
+  a `setMuted` plugin method + `muteChanged` event. Cinema Mode's ambient
+  muted channel now works on iOS.
+- `onClosed(reason)` player callback — modes react to "modal dismissed"
+  without hijacking web pause events.
+- Native `advanced` events carry a `cause` (`ended`/`unplayable`/`user`);
+  auto-skipped dead video ids are blocklisted for the session.
+- Roulette Wheel: "Done watching" control for the inline (web) player.
+
+### Changed
+- **UI rebuilt on the Apple 2026 Liquid Glass design language**: one
+  translucent glass material (blur + saturation + inner highlight + hairline)
+  across all chrome; concentric radii; capsule controls; tinted-glass Play
+  hero; glass About sheet with grouped-inset sections; glass fun-modes sheet.
+- `styles/index.css` rewritten from scratch — eight generations of layered
+  overrides (v1.6→v3.1) and ~600 lines of dead rules removed.
+- Fun-modes entry is now a labeled "Modes" capsule (the bare star read as a
+  bookmark, not a menu).
+
+### Fixed
+- `closeTrailer` left the pending `openTrailer` promise (and a keepAlive'd
+  plugin call) hanging forever; external dismissals now resolve via a
+  `viewDidDisappear` safety net too.
+- Pausing a trailer on web no longer instantly spoils Blind Date's reveal,
+  ends a Guess-the-Year round, or kicks the Roulette Wheel to its result.
+- Returning from the background no longer mislabels Play as "Spin" and no
+  longer skips an unseen trailer on the next press.
+- Stale `2.9.0` version fallback in About.
+
 ### Planned (v1.1)
 - Couple's Mode (turn-taking on a single device)
 - Stats screen visualizing taste profile

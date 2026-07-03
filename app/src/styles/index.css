@@ -1,46 +1,89 @@
 /*
- * Trailer Roulette — global styles. v1.6.0 Apple HIG pass.
+ * Trailer Roulette — global styles.
+ * v3.2 "Liquid Glass" — Apple 2026 design language, rebuilt from scratch.
  *
- * Design tokens follow Apple's iOS conventions:
- *   - Typography scale matches Dynamic Type (Title 1, Body, Caption etc.)
- *   - Spacing on a 4pt grid (4/8/12/16/20/24/32/48)
- *   - 44pt minimum tap target everywhere
- *   - Translucent materials over media (matches Apple's "Vibrant" tint)
- *   - System fonts (SF Pro on iOS via -apple-system)
- *   - Refined borders (1px hairlines using rgba)
+ * Guiding theory:
+ *   - CONTENT FIRST: the trailer is the interface. Chrome floats above it as
+ *     translucent glass that refracts the video, never as opaque panels.
+ *   - LIQUID GLASS MATERIAL: heavy backdrop blur + saturation, a 1px inner
+ *     top highlight (the "lensing" edge), a hairline border, and a soft drop
+ *     shadow. One material, used everywhere, at three intensities.
+ *   - CONCENTRIC GEOMETRY: capsules for controls, 28px+ for sheets, radii
+ *     nested so inner corners track outer corners.
+ *   - SF TYPOGRAPHY: display weights are tight and heavy; captions are small,
+ *     uppercase, and tracked wide. System font everywhere.
+ *   - SPRING FEEDBACK: controls compress on touch (scale 0.96) with a fast
+ *     ease-out; nothing fades without moving.
+ *
+ * This file intentionally replaces eight generations of layered overrides
+ * (v1.6 → v3.1). Every rule below is used by the current two-button app,
+ * the About sheet, the players, or shared fun-mode chrome. Feature modes
+ * style themselves in src/features/*.css using the tokens defined here.
  */
 
+/* ─────────────────────────── Design tokens ─────────────────────────── */
+
 :root {
-  /* Color tokens — keep narrow brand palette + iOS systemic neutrals */
-  --bg: #0E1726;          /* base canvas */
-  --bg-2: #1A2440;        /* elevated surface */
-  --bg-3: #232F4F;        /* secondary surface */
-  --fg: #F4F4F2;          /* primary label */
-  --fg-2: #C4CCDC;        /* secondary label */
-  --fg-dim: #8A93A8;      /* tertiary label / hints */
-  --gold: #D4AF37;        /* brand accent */
-  --gold-2: #B8932B;      /* pressed accent */
-  --danger: #FF453A;      /* iOS systemRed dark */
-  --success: #30D158;     /* iOS systemGreen dark */
+  /* Canvas + surfaces (kept for feature CSS compatibility) */
+  --bg: #050608;            /* near-black canvas */
+  --bg-2: #16181F;          /* elevated surface */
+  --bg-3: #22252E;          /* secondary surface */
+  --fg: #F5F6F8;            /* primary label */
+  --fg-2: #B9C0CC;          /* secondary label */
+  --fg-dim: #7E8798;        /* tertiary label / hints */
 
-  /* Hairlines (iOS 1pt separators at 1px @1x, 0.5px @2x) */
-  --hairline: rgba(255,255,255,0.08);
-  --hairline-strong: rgba(255,255,255,0.14);
+  /* Accent. NOTE: --gold is the app's historical accent token name; every
+     feature CSS file reads it. It maps to the brand light blue. */
+  --accent: #3DA5F4;
+  --accent-2: #2C8FE0;
+  --gold: var(--accent);
+  --gold-2: var(--accent-2);
+  --danger: #FF453A;        /* iOS systemRed (dark) */
+  --success: #30D158;       /* iOS systemGreen (dark) */
 
-  /* Radii */
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
+  /* Liquid Glass material — three intensities.
+     Use with: background, border, box-shadow(--glass-edge), and
+     backdrop-filter: var(--glass-filter). */
+  --glass-ultrathin: rgba(255, 255, 255, 0.07);
+  --glass-thin: rgba(255, 255, 255, 0.11);
+  --glass-regular: rgba(22, 24, 31, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-border-strong: rgba(255, 255, 255, 0.28);
+  --glass-filter: blur(24px) saturate(180%);
+  /* inner top highlight + soft depth — the "lens" edge of liquid glass */
+  --glass-edge:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 8px 28px rgba(0, 0, 0, 0.45);
+  --glass-edge-soft:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.35);
 
-  --tap: 44px;             /* HIG minimum tap target */
-  --header-h: 52px;        /* iOS standard nav-bar */
+  /* Hairlines */
+  --hairline: rgba(255, 255, 255, 0.09);
+  --hairline-strong: rgba(255, 255, 255, 0.17);
 
-  /* Font: SF Pro on Apple platforms, system fallback elsewhere */
+  /* Concentric radii */
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --capsule: 999px;
+
+  --tap: 44px;              /* HIG minimum tap target */
+
+  /* Type */
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
           'Segoe UI', Roboto, sans-serif;
-  --font-display: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+          'Segoe UI', Roboto, sans-serif;
+
+  /* Motion */
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --press: cubic-bezier(0.2, 0, 0.4, 1);
 }
+
+/* ─────────────────────────── Base ─────────────────────────── */
 
 * {
   box-sizing: border-box;
@@ -53,14 +96,27 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--bg);
+  background: #000;
   color: var(--fg);
   font-family: var(--font);
   font-size: 17px;            /* iOS Body */
   line-height: 1.4;
   overscroll-behavior-y: contain;
   -webkit-text-size-adjust: 100%;
-  overflow-x: hidden;         /* never let a stray wide element create a sideways scroll */
+  overflow-x: hidden;
+}
+
+#root { height: 100%; min-height: 100%; display: flex; flex-direction: column; }
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100svh;
+  width: 100%;
+  background: #000;
+  overflow: hidden;
 }
 
 button {
@@ -74,760 +130,27 @@ button {
   padding: 0;
   letter-spacing: -0.01em;
 }
-
-button:active { opacity: 0.7; }
 button:disabled { opacity: 0.45; cursor: default; }
 
-a { color: var(--gold); text-decoration: none; }
+a { color: var(--accent); text-decoration: none; }
 
-#root {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-.app-shell {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
-  /* keep the last content (Up Next / filters) clear of the home indicator */
-  padding-bottom: var(--sa-bottom);
+/* Utility: the Liquid Glass material as a class (used by feature modes). */
+.glass {
+  background: var(--glass-thin);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--glass-edge);
 }
 
-/* ───────── Player ───────── */
-.player-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  overflow: hidden;
-}
-.player {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.player iframe { width: 100%; height: 100%; border: 0; }
-.player-empty .player-spinner {
-  width: 28px;
-  height: 28px;
-  border: 2.5px solid var(--hairline-strong);
-  border-top-color: var(--gold);
-  border-radius: 50%;
-  animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.player-ios .player-backdrop {
-  position: absolute;
-  inset: 0;
-  background-size: cover;
-  background-position: center;
-  filter: blur(16px) brightness(0.5) saturate(140%);
-  transform: scale(1.15);
+/* Graceful fallback where backdrop-filter is unavailable. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass, .tr-pill, .tr-glyph, .tr-badge, .tr-rbtn-air,
+  .feat-close, .screen-header, .player-play-button { background: rgba(22, 24, 31, 0.92); }
 }
 
-/* Apple HIG-style filled prominent button */
-.player-play-button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 28px;
-  background: var(--gold);
-  color: #1B1810;
-  border-radius: 999px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 17px;
-  letter-spacing: -0.01em;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.3),
-    0 8px 24px rgba(212, 175, 55, 0.25);
-  min-height: var(--tap);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  z-index: 5;
-}
-.player-play-button:active:not(:disabled) {
-  transform: scale(0.96);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.3),
-    0 4px 12px rgba(212, 175, 55, 0.2);
-}
-.player-play-button .play-icon { width: 16px; height: 16px; display: block; flex: 0 0 auto; }
-.player-play-button:disabled {
-  background: var(--bg-3);
-  color: var(--fg-dim);
-  box-shadow: none;
-}
-
-.player-hint {
-  position: absolute;
-  bottom: 14px;
-  left: 0;
-  right: 0;
-  margin: 0;
-  color: var(--fg-2);
-  font-size: 13px;       /* iOS Caption 1 */
-  text-align: center;
-  letter-spacing: -0.01em;
-}
-.player-error {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
-  right: 12px;
-  background: rgba(255, 69, 58, 0.92);
-  color: #fff;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  text-align: center;
-}
-
-.player-overlay-controls {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  display: flex;
-  gap: 8px;
-  z-index: 3;
-}
-.control-btn {
-  width: 40px;
-  height: 40px;
-  min-width: 0;
-  min-height: 0;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: var(--fg);
-  font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--hairline);
-  transition: transform 0.15s ease;
-}
-.control-btn:active { transform: scale(0.92); }
-.control-btn.shuffle { font-size: 22px; }
-.cast-btn.active { color: var(--gold); }
-
-/* ───────── Screens (Watchlist / About) — sheet-style headers ───────── */
-.screen {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  background: var(--bg);
-}
-.screen-header {
-  display: grid;
-  grid-template-columns: var(--tap) 1fr var(--tap);
-  align-items: center;
-  height: var(--header-h);
-  padding: 0 4px;
-  padding-top: var(--sa-top);
-  background: rgba(14, 23, 38, 0.85);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid var(--hairline);
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
-.screen-header h1 {
-  margin: 0;
-  text-align: center;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.screen-header .count {
-  text-align: right;
-  color: var(--fg-dim);
-  font-size: 15px;
-  padding-right: 8px;
-}
-.back-btn {
-  font-size: 24px;
-  color: var(--gold);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 80px 32px 40px;
-  color: var(--fg-2);
-}
-.empty-state .heart {
-  color: var(--gold);
-  font-size: 48px;
-  display: block;
-  margin-bottom: 16px;
-}
-.empty-state p {
-  font-size: 17px;
-  line-height: 1.45;
-  margin: 0 0 8px;
-}
-.empty-state p + p { color: var(--fg-dim); font-size: 15px; }
-
-.cta {
-  margin-top: 24px;
-  background: var(--gold);
-  color: #1B1810;
-  padding: 13px 28px;
-  border-radius: 999px;
-  font-weight: 600;
-  font-size: 17px;
-  min-height: var(--tap);
-  letter-spacing: -0.01em;
-  box-shadow: 0 4px 16px rgba(212, 175, 55, 0.2);
-}
-
-.watchlist-grid {
-  list-style: none;
-  margin: 0;
-  padding: 16px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px;
-}
-.watchlist-card {
-  background: var(--bg-2);
-  border-radius: var(--radius);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--hairline);
-}
-.watchlist-card img {
-  width: 100%;
-  aspect-ratio: 2 / 3;
-  object-fit: cover;
-}
-.watchlist-meta {
-  padding: 10px 12px 12px;
-}
-.watchlist-meta h2 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 4px;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-}
-.watchlist-meta .year {
-  color: var(--fg-dim);
-  font-size: 13px;
-  margin: 0 0 8px;
-}
-.remove-btn {
-  font-size: 13px;
-  color: var(--danger);
-  padding: 0;
-  min-height: 24px;
-  font-weight: 500;
-}
-
-/* ───────── About — iOS Settings list pattern ───────── */
-.about-section {
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--hairline);
-}
-.about-section:last-of-type { border-bottom: 0; }
-.about-section h2 {
-  margin: 0 0 6px;
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.about-section h3 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--gold);
-  font-weight: 700;
-}
-.about-section p {
-  margin: 0 0 8px;
-  color: var(--fg-2);
-  line-height: 1.45;
-  font-size: 15px;
-}
-.tagline {
-  font-size: 17px !important;
-  color: var(--fg) !important;
-  letter-spacing: -0.01em;
-}
-.version {
-  font-size: 13px !important;
-  color: var(--fg-dim) !important;
-}
-
-/* ───────── Onboarding overlay polish ───────── */
-.onboarding-button {
-  background: var(--gold);
-  color: #FFFFFF;
-  border: 0;
-  border-radius: 999px;
-  padding: 14px 32px;
-  font-size: 17px;
-  font-weight: 600;
-  cursor: pointer;
-  min-width: 200px;
-  min-height: var(--tap);
-  letter-spacing: -0.01em;
-  box-shadow: 0 4px 16px rgba(61, 165, 244, 0.3);
-}
-
-/* ───────── TMDB error banner ───────── */
-.tmdb-error-banner {
-  background: var(--danger);
-  color: #fff;
-  padding: 14px 20px;
-  font-size: 14px;
-  font-family: var(--font);
-  white-space: pre-wrap;
-  word-break: break-word;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.tmdb-error-banner button {
-  align-self: flex-start;
-  background: #fff;
-  color: var(--danger);
-  border: 0;
-  border-radius: 999px;
-  padding: 8px 18px;
-  font-weight: 600;
-  font-size: 14px;
-  font-family: inherit;
-  cursor: pointer;
-  letter-spacing: -0.01em;
-}
-
-/* ───────── Desktop tweaks ───────── */
-@media (min-width: 900px) {
-  .app-shell {
-    max-width: 1100px;
-    margin: 0 auto;
-  }
-  .filters-row { flex-wrap: wrap; }
-  .up-next {
-    position: static;
-    transform: none;
-    border-radius: var(--radius);
-    margin: 16px;
-    max-height: none;
-    box-shadow: none;
-  }
-  .up-next-list { display: block; }
-  .up-next-list[hidden] { display: block; }
-  .up-next-handle { display: none; }
-}
-
-/* ───────── Reduced motion preference ───────── */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════ */
-/* ═══ v2.0.4 visual polish ═══                                         */
-/* Refinements only — additive rules that override/extend the base.    */
-/* Colors use existing custom properties + low-opacity black/white      */
-/* scrims only (no new hex). Mobile-first.                              */
-/* ═══════════════════════════════════════════════════════════════════ */
-
-/* 1. Controls legibility — subtle dark scrim behind the controls row
-      so white icons stay readable over bright trailer thumbnails.     */
-.player-overlay-controls {
-  align-items: center;
-  padding: 6px;
-  border-radius: 999px;
-  /* gentle vignette: transparent at the edges, slightly darker behind
-     the buttons — keeps the scrim from looking like a hard pill.      */
-  background: radial-gradient(
-    120% 120% at 70% 50%,
-    rgba(0, 0, 0, 0.34) 0%,
-    rgba(0, 0, 0, 0.18) 55%,
-    rgba(0, 0, 0, 0) 100%
-  );
-}
-
-/* 2. Crisp, centered SVG icons + stronger button contrast/feedback.   */
-.control-btn {
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid var(--hairline-strong);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  transition: transform 0.15s ease, background 0.15s ease;
-}
-.control-btn:active {
-  transform: scale(0.9);
-  background: rgba(0, 0, 0, 0.72);
-}
-.control-btn svg {
-  display: block;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 auto;
-}
-
-/* 3. Meta badges + where-to-watch refinement.                         */
-.meta-badges {
-  gap: 6px 8px;            /* a touch more breathing room when wrapping */
-  align-items: center;
-  margin: 4px 0 10px;
-}
-.meta-badges .badge {
-  padding: 5px 10px;
-  letter-spacing: -0.01em;
-  border: 1px solid var(--hairline);
-}
-.meta-badges .badge-rating {
-  color: var(--gold);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(212, 175, 55, 0.12);  /* faint gold wash for the star */
-  border-color: rgba(212, 175, 55, 0.28);
-}
-
-.where-to-watch {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  margin: 10px 0 0;
-}
-.where-to-watch a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: rgba(212, 175, 55, 0.12);
-  font-weight: 600;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.where-to-watch a:active {
-  color: var(--gold-2);
-  background: rgba(212, 175, 55, 0.2);
-}
-
-/* 4. Tasteful transitions (neutralized by the reduced-motion block).  */
-.swipe-indicator {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-.control-btn {
-  transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
-}
-
-/* 5. Intentional, contained TMDB error banner with a small filled
-      retry button instead of a full-bleed red bar.                    */
-.tmdb-error-banner {
-  margin: 12px 16px;
-  padding: 12px 14px;
-  border-radius: var(--radius);
-  background: rgba(255, 69, 58, 0.12);   /* red-tinted, not solid */
-  border: 1px solid rgba(255, 69, 58, 0.32);
-  color: var(--fg);
-  gap: 12px;
-}
-.tmdb-error-banner button {
-  align-self: flex-start;
-  background: var(--danger);
-  color: #fff;
-  padding: 8px 18px;
-  min-height: 36px;
-  border-radius: 999px;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform 0.15s ease, opacity 0.15s ease;
-}
-.tmdb-error-banner button:active {
-  transform: scale(0.96);
-  opacity: 0.9;
-}
-
-/* ═══════════ v2.1 CINEMATIC REDESIGN (overrides) ═══════════ */
-
-/* Depth — rich vertical gradient canvas behind everything */
-body {
-  background: linear-gradient(180deg, #16203a 0%, var(--bg) 44%, #070b14 100%);
-  background-attachment: fixed;
-}
-.app-shell { background: transparent; }
-
-/* Glassy, floating header */
-.app-header {
-  background: linear-gradient(180deg, rgba(10,16,28,0.85), rgba(10,16,28,0.32));
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-.app-title { font-size: 18px; letter-spacing: -0.03em; }
-
-/* Hero player — soft shadow + bottom scrim that blends video into the meta */
-.player-wrap { box-shadow: 0 18px 44px -20px rgba(0,0,0,0.95); }
-.player-wrap::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 40%;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(7,11,20,0) 0%, rgba(7,11,20,0.5) 68%, var(--bg) 100%);
-  z-index: 1;
-}
-.player-play-button, .player-overlay-controls, .player-error, .player-hint { z-index: 4; }
-.player-ios .player-backdrop { filter: blur(22px) brightness(0.42) saturate(155%); transform: scale(1.2); }
-
-/* Prominent, gently glowing play button */
-.player-play-button {
-  padding: 16px 32px;
-  font-size: 18px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 1px rgba(212,175,55,0.5), 0 10px 34px rgba(212,175,55,0.38);
-  animation: trGlow 2.8s ease-in-out infinite;
-}
-@keyframes trGlow {
-  0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 1px rgba(212,175,55,0.45), 0 8px 26px rgba(212,175,55,0.28); }
-  50%      { box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0 0 1px rgba(212,175,55,0.72), 0 12px 42px rgba(212,175,55,0.5); }
-}
-
-/* Cinematic meta */
-.meta { padding: 14px 20px 8px; animation: trRise 0.5s cubic-bezier(0.2,0.7,0.2,1) both; }
-.meta h2 {
-  font-family: var(--font-display);
-  font-size: 27px;
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-  margin: 0 0 10px;
-}
-.meta .year { font-weight: 400; color: var(--fg-dim); font-size: 0.7em; }
-.meta .overview { color: var(--fg-2); font-size: 15px; }
-@keyframes trRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-
-/* Sleek translucent badge pills */
-.meta-badges .badge {
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.10);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  padding: 5px 11px;
-  font-size: 12px;
-}
-.meta-badges .badge-rating {
-  color: var(--gold);
-  border-color: rgba(212,175,55,0.4);
-  background: rgba(212,175,55,0.12);
-}
-
-/* Premium overlay controls */
-.player-overlay-controls { gap: 10px; bottom: 14px; right: 14px; }
-.control-btn {
-  width: 44px; height: 44px;
-  background: rgba(10,14,24,0.55);
-  border: 1px solid rgba(255,255,255,0.16);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  backdrop-filter: blur(14px) saturate(160%);
-}
-.control-btn svg { width: 22px; height: 22px; display: block; }
-
-/* Refined chips + era segments */
-.era-segment { font-size: 13px; font-weight: 600; transition: background 0.2s ease, color 0.2s ease; }
-.era-segment.active { background: var(--gold); color: #1B1810; }
-.chip {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.10);
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
-}
-.chip:active { transform: scale(0.95); }
-.chip.active {
-  background: rgba(212,175,55,0.16);
-  border-color: rgba(212,175,55,0.55);
-  color: var(--gold);
-}
-
-/* Screens fade/slide in */
-.screen { animation: trRise 0.4s cubic-bezier(0.2,0.7,0.2,1) both; }
-.up-next { border-top: 1px solid rgba(255,255,255,0.06); }
-
-/* ═══════════ v2.2 LIGHT THEME (white + light blue) + TAB BAR ═══════════ */
-
-/* Dark palette for the immersive build — deep neutral surfaces with the
-   light-blue accent. Secondary screens (Watchlist, About, Stats) read from
-   these so the whole app matches the black video stage. */
-:root {
-  --bg: #07080B;            /* near-black canvas */
-  --bg-2: #16181F;          /* elevated surface */
-  --bg-3: #21242D;          /* secondary surface */
-  --fg: #F5F6F8;            /* near-white primary text */
-  --fg-2: #AEB6C4;          /* secondary */
-  --fg-dim: #7B8494;        /* tertiary */
-  --gold: #3DA5F4;          /* light-blue accent */
-  --gold-2: #2C8FE0;        /* pressed accent */
-  --danger: #FF453A;
-  --success: #34C759;
-  --hairline: rgba(255,255,255,0.10);
-  --hairline-strong: rgba(255,255,255,0.18);
-}
-
-/* Canvas: solid black behind the immersive stage. */
-body {
-  background: #000;
-  color: var(--fg);
-}
-/* Fixed-height shell so the tab bar stays pinned and .tab-content scrolls inside it */
-html, body { height: 100%; }
-#root { height: 100%; min-height: 100%; }
-.app-shell { background: transparent; padding-bottom: 0; height: 100%; }
-
-/* Header — light, glassy. */
-.app-header {
-  background: rgba(255,255,255,0.82);
-  border-bottom: 1px solid var(--hairline);
-}
-.app-title { color: var(--fg); }
-.app-title .accent { color: var(--gold); font-style: normal; font-family: var(--font-display); }
-.header-btn { color: var(--gold); }
-.header-side { display: flex; align-items: center; gap: 4px; min-width: var(--tap); }
-.header-side.header-right { justify-content: flex-end; }
-.watchlist-btn .badge { color: #fff; background: var(--gold); }
-
-/* Player stays a black stage; overlay controls remain dark-glass + white icons
-   (legible over any video) — intentionally NOT re-themed. Blend it into the page. */
-.player-wrap::after {
-  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.32) 62%, var(--bg) 100%);
-}
-
-/* Play button: light-blue, white label, soft blue glow (no pulse on light). */
-.player-play-button {
-  background: var(--gold);
-  color: #fff;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.18), 0 10px 30px rgba(61,165,244,0.36);
-  animation: none;
-}
-.player-play-button:disabled { background: var(--bg-3); color: var(--fg-dim); box-shadow: none; }
-
-/* Meta on white */
-.meta h2, .meta .overview { color: inherit; }
-.meta-badges .badge { background: var(--bg-2); border: 1px solid var(--hairline); color: var(--fg-2); }
-.meta-badges .badge-rating { color: var(--gold); background: rgba(61,165,244,0.12); border-color: rgba(61,165,244,0.4); }
-.where-to-watch { color: var(--fg-2); }
-.where-to-watch a { color: var(--gold); background: rgba(61,165,244,0.12); }
-.cycle-counter { color: var(--fg-dim); }
-
-/* Era toggle + chips on white */
-.era-toggle { background: var(--bg-2); border: 1px solid var(--hairline); }
-.era-segment { color: var(--fg-2); }
-.era-segment.active { background: var(--gold); color: #fff; }
-.chip { background: var(--bg-2); border: 1px solid var(--hairline); color: var(--fg-2); }
-.chip.active { background: rgba(61,165,244,0.14); border-color: rgba(61,165,244,0.5); color: var(--gold); }
-.chip.chip-clear { color: var(--fg-dim); }
-
-/* Screens / Up Next on white */
-.screen { background: var(--bg); }
-.screen-header { background: var(--bg); border-bottom: 1px solid var(--hairline); }
-.screen-header h1 { color: var(--fg); }
-.filters-screen, .watchlist-screen, .about-screen, .stats-screen, .search-screen { background: var(--bg); }
-.back-btn, .screen-header .count { color: var(--gold); }
-.up-next { background: var(--bg); border-top: 1px solid var(--hairline); }
-.handle-label { color: var(--fg-2); }
-.up-next-title { color: var(--fg); }
-.up-next-title small { color: var(--fg-dim); }
-.empty-state { color: var(--fg-2); }
-.empty-state .cta { background: var(--gold); color: #fff; }
-.about-section h2, .about-section h3, .tagline { color: var(--fg); }
-.about-section p, .version { color: var(--fg-2); }
-.watchlist-meta h2 { color: var(--fg); }
-.watchlist-card { background: var(--bg-2); }
-.remove-btn { color: var(--danger); }
-
-/* ═══════════ v2.3 SIMPLIFIED single-screen feed ═══════════ */
-
-/* No tab bar now — the trailer screen owns the whole viewport and scrolls. */
-.trailer-roulette {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.trailer-roulette .player-wrap { flex: 0 0 auto; }
-
-/* Primary action bar — AirPlay + Skip are the heroes; save/share stay quiet. */
-.trailer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 16px 16px 4px;
-}
-.ta-icon {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--fg-2);
-  border-radius: 50%;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
-}
-.ta-icon:active { background: var(--bg-2); transform: scale(0.92); }
-.ta-icon[aria-label^="Remove"], .ta-icon[aria-label^="Save"] { color: var(--gold); }
-.ta-big {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex: 1 1 0;
-  max-width: 190px;
-  height: 52px;
-  padding: 0 20px;
-  border-radius: 999px;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  transition: transform 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease;
-}
-.ta-big:active { transform: scale(0.97); }
-.ta-big:disabled { opacity: 0.4; }
-.ta-airplay {
-  color: var(--gold);
-  background: rgba(61,165,244,0.12);
-  border: 1px solid rgba(61,165,244,0.42);
-}
-.ta-skip {
-  color: #fff;
-  background: var(--gold);
-  box-shadow: 0 6px 18px rgba(61,165,244,0.35);
-}
-.ta-skip svg polygon { fill: #fff; }
-
-/* ═══════════ v2.5 IMMERSIVE full-bleed video feed ═══════════ */
-/* The trailer fills the screen on a cinematic black stage. Controls float
-   over the video; movie info lives in a bottom gradient scrim. This overrides
-   the v2.2/v2.3 light card layout for the main screen. */
-
-html, body { height: 100%; background: #000; }
-#root { min-height: 100svh; }
-.app-shell { height: 100svh; background: #000; }
+/* ─────────────────────────── The stage ─────────────────────────── */
+/* One immersive screen: full-bleed video with floating glass chrome. */
 
 .tr-stage {
   position: relative;
@@ -838,257 +161,200 @@ html, body { height: 100%; background: #000; }
   background: #000;
   color: #fff;
   overflow: hidden;
-  font-family: var(--font, -apple-system, system-ui, sans-serif);
 }
 
-/* Full-bleed stage — kill the 16:9 box and the blend-to-page gradient. */
-.tr-stage .player-wrap {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  aspect-ratio: auto;
-  flex: none;
-  background: #000;
-  border-radius: 0;
-  box-shadow: none;
-  z-index: 0;
-}
-.tr-stage .player-wrap::after { display: none; }
-.tr-stage .player,
-.tr-stage .player-web,
-.tr-stage .player-ios { position: absolute; inset: 0; width: 100%; height: 100%; }
-.tr-stage .player-web > div { width: 100% !important; height: 100% !important; }
-.tr-stage .player-ios .player-backdrop {
-  filter: blur(0) brightness(0.82) saturate(108%);
-  transform: scale(1.02);
-}
-
-/* Big glassy circular play button (iOS card state). */
-.tr-stage .player-play-button {
-  width: 86px; height: 86px;
-  padding: 0; border-radius: 50%;
-  flex-direction: column; gap: 0;
-  justify-content: center; align-items: center;
-  background: rgba(255,255,255,0.18);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border: 1.5px solid rgba(255,255,255,0.55);
-  color: #fff;
-  box-shadow: 0 10px 34px rgba(0,0,0,0.55);
-  animation: none;
-}
-.tr-stage .player-play-button .play-icon { width: 34px; height: 34px; margin: 0; }
-.tr-stage .player-play-button .play-label { display: none; }
-.tr-stage .player-play-button:disabled { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); }
-.tr-stage .player-hint { color: rgba(255,255,255,0.85); text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
-
-/* Top progress hairline for the current trailer. */
-.tr-progress {
-  position: absolute; top: 0; left: 0; right: 0; height: 2.5px;
-  background: rgba(255,255,255,0.16); z-index: 6;
-}
-.tr-progress span {
-  display: block; height: 100%; width: 100%;
-  background: var(--gold); transform-origin: left center;
-  transform: scaleX(0); transition: transform 0.5s linear;
-}
-
-/* Floating top bar. */
-.tr-topbar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
-  display: flex; align-items: center; justify-content: flex-end;
-  /* Always clear the Dynamic Island / notch even if the webview reports a
-     zero safe-area inset (Capacitor contentInset can swallow it). */
-  padding: max(env(safe-area-inset-top, 0px), 52px) 14px 14px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 100%);
-  pointer-events: none;
-}
-.tr-topbar > * { pointer-events: auto; }
-.tr-brand { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.95); letter-spacing: -0.01em; text-shadow: 0 1px 4px rgba(0,0,0,0.55); }
-.tr-brand b { color: var(--gold); font-weight: 800; }
-.tr-glyph {
-  position: relative; width: 40px; height: 40px;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; border-radius: 50%;
-  background: rgba(0,0,0,0.32);
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  transition: transform 0.1s ease;
-}
-.tr-glyph:active { transform: scale(0.9); }
-.tr-glyph-badge {
-  position: absolute; top: -3px; right: -3px;
-  min-width: 18px; height: 18px; padding: 0 4px;
-  background: var(--gold); color: #fff; font-size: 11px; font-weight: 700;
-  border-radius: 9px; display: flex; align-items: center; justify-content: center;
-  border: 1.5px solid #000;
-}
-
-/* Right action rail. */
-.tr-rail {
-  position: absolute; right: 8px; z-index: 5;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 132px);
-  display: flex; flex-direction: column; align-items: center; gap: 20px;
-}
-.tr-rail-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  color: #fff; background: transparent; border: 0; cursor: pointer;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
-  transition: transform 0.1s ease, color 0.15s ease;
-}
-.tr-rail-btn svg { filter: drop-shadow(0 1px 5px rgba(0,0,0,0.6)); }
-.tr-rail-btn span { font-size: 11px; font-weight: 600; letter-spacing: 0.01em; }
-.tr-rail-btn:active { transform: scale(0.88); }
-.tr-rail-btn.is-on { color: var(--gold); }
-.tr-rail-btn:disabled { opacity: 0.4; }
-
-/* Bottom scrim — movie info + hero Skip. */
-.tr-bottom {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
-  display: flex; flex-direction: column; gap: 14px;
-  padding: 64px 16px max(env(safe-area-inset-bottom), 14px);
-  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 38%, rgba(0,0,0,0.9) 100%);
-  pointer-events: none;
-}
-.tr-bottom > * { pointer-events: auto; }
-.tr-meta { padding-right: 60px; }
-.tr-meta h2 {
-  font-size: 23px; font-weight: 800; line-height: 1.12; margin: 0 0 9px;
-  letter-spacing: -0.02em; text-shadow: 0 1px 6px rgba(0,0,0,0.65);
-}
-.tr-year { font-weight: 500; opacity: 0.7; }
-.tr-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
-.tr-badge {
-  font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
-  background: rgba(255,255,255,0.18); color: #fff;
-  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-}
-.tr-badge-rating { background: var(--gold); color: #fff; }
-.tr-overview {
-  font-size: 13.5px; line-height: 1.45; margin: 0 0 6px;
-  color: rgba(255,255,255,0.88); text-shadow: 0 1px 4px rgba(0,0,0,0.5);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.tr-watch { font-size: 12.5px; color: rgba(255,255,255,0.72); margin: 0; }
-.tr-watch a { color: var(--gold); }
-
-.tr-skip {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  width: 100%; height: 54px; border-radius: 999px;
-  background: var(--gold); color: #fff; cursor: pointer; border: 0;
-  font-size: 17px; font-weight: 700; letter-spacing: -0.01em;
-  box-shadow: 0 8px 24px rgba(61,165,244,0.45);
-  transition: transform 0.1s ease, opacity 0.12s ease;
-}
-.tr-skip:active { transform: scale(0.98); }
-.tr-skip:disabled { opacity: 0.45; box-shadow: none; }
-.tr-skip svg polygon { fill: #fff; }
-.tr-skip svg line { stroke: #fff; }
-
-.tr-stage .tmdb-error-banner {
-  position: absolute; top: 50%; left: 16px; right: 16px; z-index: 7;
-  transform: translateY(-50%);
-}
-
-/* ═══════════ v2.6 TINDER swipe card ═══════════ */
-/* The trailer is a card you drag like a dating app: left to skip, right to
-   save, tap to play. Floating close / AirPlay / save row mirrors the gestures. */
-
-.tr-card {
-  position: absolute; inset: 0; z-index: 1;
-  will-change: transform;
-  transform-origin: center 120%;
-}
-.tr-card.is-animating {
-  transition: transform 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-/* Transparent gesture layer over the video (leaves the info zone tappable). */
-.tr-capture {
-  position: absolute; left: 0; right: 0; top: 0; bottom: 150px;
-  z-index: 2; touch-action: none; cursor: grab;
-}
-.tr-capture:active { cursor: grabbing; }
-
-/* SAVE / SKIP stamps, Tinder-style. */
-.tr-stamp {
-  position: absolute; top: 92px; z-index: 4; pointer-events: none;
-  font-size: 32px; font-weight: 900; letter-spacing: 3px; text-transform: uppercase;
-  padding: 5px 14px; border-radius: 12px; border: 4px solid currentColor;
-  text-shadow: 0 2px 10px rgba(0,0,0,0.35);
-}
-.tr-stamp-like { left: 22px; color: #34D27B; transform: rotate(-15deg); }
-.tr-stamp-nope { right: 22px; color: #FF4E5B; transform: rotate(15deg); }
-
-/* Movie info, inside the card so it swipes with the video. */
-.tr-cardinfo {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
-  padding: 70px 18px calc(env(safe-area-inset-bottom, 0px) + 108px);
-  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 42%, rgba(0,0,0,0.92) 100%);
-  pointer-events: none;
-  animation: trInfoIn 0.34s ease both;
-}
-.tr-cardinfo > * { pointer-events: auto; }
-@keyframes trInfoIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-.tr-cardinfo h2 {
-  font-size: 23px; font-weight: 800; line-height: 1.12; margin: 0 0 9px;
-  letter-spacing: -0.02em; text-shadow: 0 1px 6px rgba(0,0,0,0.65);
-}
-
-/* Top bar right cluster (share + watchlist). */
-.tr-topbar-right { display: flex; align-items: center; gap: 8px; }
-
-/* Dating-app action row. */
-.tr-actions {
-  position: absolute; left: 0; right: 0; z-index: 6;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
-  display: flex; align-items: center; justify-content: center; gap: 24px;
-  pointer-events: none;
-}
-.tr-actions > * { pointer-events: auto; }
-.tr-act {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 1px; border-radius: 50%; cursor: pointer;
-  background: #15171E; color: #fff; border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 8px 22px rgba(0,0,0,0.45);
-  transition: transform 0.12s ease, background 0.15s ease;
-}
-.tr-act:active { transform: scale(0.9); }
-.tr-act:disabled { opacity: 0.4; }
-.tr-act-nope, .tr-act-like { width: 66px; height: 66px; }
-.tr-act-nope { color: #FF4E5B; }
-.tr-act-like { color: #34D27B; }
-.tr-act-like.is-on { background: #34D27B; color: #fff; }
-.tr-act-air { width: 56px; height: 56px; color: var(--gold); }
-.tr-act-air span { font-size: 9px; font-weight: 700; letter-spacing: 0.02em; margin-top: 1px; }
-
-/* ═══════════ v2.8 instant backdrop + next-card peek ═══════════ */
-/* The video stage is transparent so the movie's backdrop shows the instant a
-   card appears — no black void while the trailer loads/buffers. */
-.tr-stage .player-wrap { background: transparent; }
-
+/* Instant backdrop: the movie's art shows the moment a card lands, so the
+   stage is never a black void while the trailer buffers. */
 .tr-backdrop {
   position: absolute; inset: 0; z-index: 0;
   background-size: cover; background-position: center;
-  filter: brightness(0.6) saturate(1.05);
-  animation: trInfoIn 0.4s ease both;
+  filter: brightness(0.58) saturate(1.05);
+  animation: trFadeUp 0.45s var(--spring) both;
 }
-
-/* The next trailer's art, peeking behind the current card. */
+/* The next trailer's art, dimmed and receded behind the current one. */
 .tr-next {
   position: absolute; inset: 0; z-index: 0;
   background-size: cover; background-position: center;
-  filter: brightness(0.32) saturate(0.9) blur(2px);
+  filter: brightness(0.3) saturate(0.85) blur(2px);
   transform: scale(0.96);
 }
+@keyframes trFadeUp {
+  from { opacity: 0; transform: scale(1.02); }
+  to   { opacity: 1; transform: scale(1); }
+}
 
-/* ═══════════ v3.0 — pure two-button roulette ═══════════ */
-/* Random trailers, any genre/decade. Two buttons: Play (spin) + AirPlay. */
+/* Full-bleed player layer. */
+.player-wrap { position: absolute; inset: 0; z-index: 0; background: transparent; overflow: hidden; }
+.player { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.player iframe { width: 100%; height: 100%; border: 0; }
+.player-web > div { width: 100% !important; height: 100% !important; }
 
-.tr-roulette .tr-badge-era { background: rgba(61,165,244,0.20); color: #fff; }
+.player-empty .player-spinner {
+  width: 30px; height: 30px;
+  border: 2.5px solid var(--hairline-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* iOS idle card: the movie's backdrop with a glass play control. */
+.player-ios .player-backdrop {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  filter: brightness(0.82) saturate(108%);
+  transform: scale(1.02);
+}
+
+/* The big circular glass Play. Icon is centroid-centered SVG — true optical
+   centering with flexbox, no margin nudges. */
+.player-play-button {
+  position: relative; z-index: 5;
+  width: 88px; height: 88px;
+  display: inline-flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 0; border-radius: 50%;
+  background: var(--glass-thin);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border-strong);
+  box-shadow: var(--glass-edge);
+  color: #fff;
+  transition: transform 0.16s var(--press), background 0.16s ease;
+}
+.player-play-button:active:not(:disabled) {
+  transform: scale(0.94);
+  background: rgba(255, 255, 255, 0.18);
+}
+.player-play-button .play-icon { width: 36px; height: 36px; display: block; }
+.player-play-button .play-label { display: none; }
+.player-play-button:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-edge-soft);
+}
+
+.player-hint {
+  position: absolute; bottom: 14px; left: 0; right: 0; z-index: 5;
+  margin: 0; text-align: center;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px; letter-spacing: -0.01em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+.player-error {
+  position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 5;
+  background: rgba(255, 69, 58, 0.28);
+  border: 1px solid rgba(255, 69, 58, 0.55);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px; font-weight: 500; text-align: center;
+}
+
+/* Thin progress hairline for the current trailer (web cycle timer). */
+.tr-progress {
+  position: absolute; top: 0; left: 0; right: 0; height: 2.5px;
+  background: rgba(255, 255, 255, 0.14); z-index: 6;
+}
+.tr-progress span {
+  display: block; height: 100%; width: 100%;
+  background: var(--accent); transform-origin: left center;
+  transform: scaleX(0); transition: transform 0.5s linear;
+}
+
+/* ─────────────────────────── Top bar ─────────────────────────── */
+
+.tr-topbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: flex-end;
+  /* Clear the Dynamic Island / notch even if the webview reports a zero
+     safe-area inset. */
+  padding: max(env(safe-area-inset-top, 0px), 52px) 16px 16px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0) 100%);
+  pointer-events: none;
+}
+.tr-topbar > * { pointer-events: auto; }
+.tr-topbar-right { display: flex; align-items: center; gap: 10px; }
+
+/* Labeled glass capsule — the fun-modes entry point. Labeled on purpose:
+   a bare star read as "favorite", not "menu". */
+.tr-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; min-height: 40px; padding: 0 15px;
+  border-radius: var(--capsule);
+  background: var(--glass-thin);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-edge-soft);
+  color: #fff; font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
+  transition: transform 0.16s var(--press), background 0.16s ease;
+}
+.tr-pill:active { transform: scale(0.95); background: rgba(255, 255, 255, 0.17); }
+.tr-pill svg { color: var(--accent); }
+
+/* Circular glass glyph button (info). */
+.tr-glyph {
+  position: relative; width: 40px; height: 40px;
+  min-width: 40px; min-height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; border-radius: 50%;
+  background: var(--glass-thin);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-edge-soft);
+  transition: transform 0.16s var(--press), background 0.16s ease;
+}
+.tr-glyph:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.17); }
+
+/* ─────────────────────────── Now playing ─────────────────────────── */
+
+.tr-cardinfo {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  padding: 90px 20px calc(env(safe-area-inset-bottom, 0px) + 118px);
+  background: linear-gradient(180deg,
+    rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.45) 45%, rgba(0, 0, 0, 0.88) 100%);
+  pointer-events: none;
+  animation: trInfoIn 0.4s var(--spring) both;
+}
+.tr-cardinfo > * { pointer-events: auto; }
+@keyframes trInfoIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+.tr-cardinfo h2 {
+  font-family: var(--font-display);
+  font-size: 26px; font-weight: 800; line-height: 1.1;
+  margin: 0 0 10px; letter-spacing: -0.03em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
+}
+.tr-year { font-weight: 500; opacity: 0.65; font-size: 0.82em; letter-spacing: -0.01em; }
+
+.tr-badges { display: flex; flex-wrap: wrap; gap: 7px; }
+.tr-badge {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.01em;
+  padding: 4px 11px; border-radius: var(--capsule);
+  background: var(--glass-ultrathin);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+}
+.tr-badge-era {
+  background: rgba(61, 165, 244, 0.22);
+  border-color: rgba(61, 165, 244, 0.45);
+  color: #fff;
+}
+
+/* ─────────────────────────── The two buttons ─────────────────────────── */
 
 .tr-roulette-actions {
   position: absolute; left: 0; right: 0; z-index: 6;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
   display: flex; align-items: center; justify-content: center; gap: 14px;
   padding: 0 20px; pointer-events: none;
 }
@@ -1096,56 +362,181 @@ html, body { height: 100%; background: #000; }
 
 .tr-rbtn {
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-  height: 60px; padding: 0 26px; border-radius: 999px;
-  font-size: 17px; font-weight: 800; letter-spacing: -0.01em;
+  height: 58px; padding: 0 26px; border-radius: var(--capsule);
+  font-size: 17px; font-weight: 700; letter-spacing: -0.02em;
   color: #fff; border: 0; cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+  transition: transform 0.16s var(--press), box-shadow 0.2s ease, opacity 0.15s ease;
 }
 .tr-rbtn:active { transform: scale(0.96); }
 .tr-rbtn:disabled { opacity: 0.5; }
 .tr-rbtn svg { display: block; }
 
-/* Play — the hero. A gentle glow while idle says "press me". */
+/* Play — the hero. Tinted liquid glass: the accent glows through the blur
+   instead of sitting on top as a flat fill. Gentle breathing while idle. */
 .tr-rbtn-play {
   flex: 1 1 0; max-width: 300px;
-  background: var(--gold);
-  box-shadow: 0 10px 30px rgba(61,165,244,0.45);
-  animation: trPlayGlow 2.6s ease-in-out infinite;
+  background: linear-gradient(180deg, rgba(72, 174, 250, 0.92), rgba(38, 128, 210, 0.92));
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 10px 30px rgba(61, 165, 244, 0.42);
+  animation: trPlayGlow 2.8s ease-in-out infinite;
 }
 .tr-rbtn-play.is-playing { animation: none; }
 @keyframes trPlayGlow {
-  0%, 100% { box-shadow: 0 8px 24px rgba(61,165,244,0.32); }
-  50%      { box-shadow: 0 12px 40px rgba(61,165,244,0.6); }
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 8px 24px rgba(61,165,244,0.3); }
+  50%      { box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 12px 40px rgba(61,165,244,0.58); }
 }
 
-/* AirPlay — quieter, outlined. */
+/* AirPlay — quiet glass capsule beside the hero. */
 .tr-rbtn-air {
   flex: 0 0 auto;
-  color: var(--gold);
-  background: rgba(61,165,244,0.14);
-  border: 1px solid rgba(61,165,244,0.45);
+  color: #fff;
+  background: var(--glass-thin);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-edge-soft);
+}
+.tr-rbtn-air svg { color: var(--accent); }
+.tr-rbtn-air:active { background: rgba(255, 255, 255, 0.17); }
+
+/* ─────────────────────────── Error banner ─────────────────────────── */
+
+.tmdb-error-banner {
+  position: absolute; top: 50%; left: 20px; right: 20px; z-index: 7;
+  transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px 18px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--glass-regular);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid rgba(255, 69, 58, 0.4);
+  box-shadow: var(--glass-edge);
+  color: var(--fg);
+  font-size: 14px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.tmdb-error-banner button {
+  align-self: flex-start;
+  background: var(--danger); color: #fff;
+  padding: 9px 20px; min-height: 38px;
+  border-radius: var(--capsule);
+  font-weight: 600; font-size: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s var(--press), opacity 0.15s ease;
+}
+.tmdb-error-banner button:active { transform: scale(0.96); opacity: 0.9; }
+
+/* ─────────────────────────── About sheet ─────────────────────────── */
+/* iOS Settings grouped-inset pattern on a dark canvas. */
+
+.screen {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; flex-direction: column;
+  min-height: 100%;
+  background: var(--bg);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  animation: trInfoIn 0.35s var(--spring) both;
+}
+.screen-header {
+  display: grid;
+  grid-template-columns: var(--tap) 1fr var(--tap);
+  align-items: center;
+  min-height: 52px;
+  padding: 0 6px;
+  padding-top: max(env(safe-area-inset-top, 0px), 14px);
+  background: rgba(5, 6, 8, 0.72);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border-bottom: 1px solid var(--hairline);
+  position: sticky; top: 0; z-index: 5;
+}
+.screen-header h1 {
+  margin: 0; text-align: center;
+  font-size: 17px; font-weight: 600; letter-spacing: -0.02em;
+}
+.back-btn {
+  font-size: 24px; color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
 }
 
-/* ═══════════ v3.1 — fun modes (feature overlays) ═══════════ */
-/* Shared base for every full-screen "fun mode". Each mode adds its own classes
-   in its own CSS file; this just gives a consistent shell + close button. */
+.about-screen { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
+.about-section {
+  margin: 16px 16px 0;
+  padding: 16px 18px;
+  background: var(--glass-ultrathin);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.about-section h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 24px; font-weight: 800; letter-spacing: -0.03em;
+  color: var(--fg);
+}
+.about-section h3 {
+  margin: 0 0 8px;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--accent); font-weight: 700;
+}
+.about-section p {
+  margin: 0 0 8px;
+  color: var(--fg-2); line-height: 1.45; font-size: 15px;
+}
+.about-section p:last-child { margin-bottom: 0; }
+.tagline { font-size: 17px !important; color: var(--fg) !important; letter-spacing: -0.01em; }
+.version { font-size: 13px !important; color: var(--fg-dim) !important; }
+
+/* ─────────────────────────── Fun-mode shell ─────────────────────────── */
+/* Shared base for every full-screen mode. Each mode adds its own classes in
+   its own CSS file; this gives a consistent canvas + glass close control. */
+
 .feat {
   position: fixed; inset: 0; z-index: 30;
-  background: radial-gradient(120% 90% at 50% 0%, #14161C 0%, #07080B 72%);
+  background:
+    radial-gradient(120% 90% at 50% 0%, #14161C 0%, #050608 72%);
   color: var(--fg);
   display: flex; flex-direction: column;
   padding: max(env(safe-area-inset-top, 0px), 20px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
   overflow-y: auto; -webkit-overflow-scrolling: touch;
-  animation: featIn 0.28s ease both;
+  animation: featIn 0.3s var(--spring) both;
 }
-@keyframes featIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes featIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.99); }
+  to   { opacity: 1; transform: none; }
+}
 .feat-close {
-  position: absolute; top: max(env(safe-area-inset-top, 0px), 14px); right: 14px; z-index: 2;
-  width: 40px; height: 40px; min-width: 0; min-height: 0; border-radius: 50%;
+  position: absolute;
+  top: max(env(safe-area-inset-top, 0px), 14px); right: 14px; z-index: 2;
+  width: 40px; height: 40px; min-width: 0; min-height: 0;
+  border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.16);
-  font-size: 18px; cursor: pointer; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  background: var(--glass-thin);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--glass-edge-soft);
+  color: #fff; font-size: 17px; cursor: pointer;
+  transition: transform 0.16s var(--press), background 0.16s ease;
 }
-.feat-close:active { transform: scale(0.92); }
-.feat-coming { margin: auto; text-align: center; color: var(--fg-2); }
-.feat-coming h2 { font-size: 26px; margin: 0 0 8px; color: var(--fg); }
+.feat-close:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.17); }
+
+/* ─────────────────────────── Desktop dev view ─────────────────────────── */
+
+@media (min-width: 900px) {
+  .app-shell { max-width: 520px; margin: 0 auto; border-left: 1px solid var(--hairline); border-right: 1px solid var(--hairline); }
+}
+
+/* ─────────────────────────── Reduced motion ─────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

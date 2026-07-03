@@ -192,7 +192,8 @@ export default function GuessYear({ onClose }) {
               isPlaying={isPlaying}
               playSignal={playSignal}
               onPlay={() => setIsPlaying(true)}
-              onPause={() => { setIsPlaying(false); toGuessing(); }}
+              onPause={() => setIsPlaying(false)}
+              onClosed={toGuessing}
               onEnded={toGuessing}
               onAdvanceInPlace={toGuessing}
               onDurationKnown={() => {}}

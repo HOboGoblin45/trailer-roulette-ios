@@ -177,7 +177,10 @@ export default function TrailerRoulette() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, current, cycleSeconds]);
 
-  // Pause on background / resume on foreground (iOS).
+  // Pause on background (iOS). On return we deliberately stay paused: the
+  // native session is over, so flipping isPlaying back to true would only lie
+  // to the Play button ("Spin") and make the next press skip a trailer the
+  // user never saw. One tap on Play resumes exactly where they left off.
   useEffect(() => {
     if (Capacitor.getPlatform() !== 'ios') return undefined;
     let sub;
@@ -187,15 +190,14 @@ export default function TrailerRoulette() {
         const { App } = await import('@capacitor/app');
         if (cancelled) return;
         sub = await App.addListener('appStateChange', (state) => {
-          if (state.isActive) { if (current?.youtubeKey) setIsPlaying(true); }
-          else setIsPlaying(false);
+          if (!state.isActive) setIsPlaying(false);
         });
       } catch (e) {
         console.warn('[TrailerRoulette] @capacitor/app unavailable', e);
       }
     })();
     return () => { cancelled = true; try { sub?.remove?.(); } catch { /* noop */ } };
-  }, [current?.youtubeKey]);
+  }, []);
 
   const advance = useCallback(() => {
     setQueue((q) => {
@@ -216,6 +218,12 @@ export default function TrailerRoulette() {
 
   // Native chained to the next trailer in place (continuous playback).
   const onAdvanceInPlace = useCallback(() => { haptics.light(); advance(); }, [advance]);
+
+  // Native auto-skipped a dead video id mid-session — blocklist it so it
+  // never resurfaces from a later queue pull.
+  const onUnplayable = useCallback((key) => {
+    if (key) unplayableKeysRef.current.add(key);
+  }, []);
 
   const onTrailerDurationKnown = useCallback((duration) => {
     if (!Number.isFinite(duration) || duration <= 0) return;
@@ -272,21 +280,23 @@ export default function TrailerRoulette() {
             onPause={() => setIsPlaying(false)}
             onEnded={onTrailerEnded}
             onAdvanceInPlace={onAdvanceInPlace}
+            onUnplayable={onUnplayable}
             onDurationKnown={onTrailerDurationKnown}
           />
         </div>
       )}
 
-      {/* Top-right: fun-modes menu (✦) + a small info button (attribution). */}
+      {/* Top-right: labeled Modes pill (the fun-modes menu) + info button. */}
       <div className="tr-topbar">
         <div className="tr-topbar-right">
-          <button className="tr-glyph" onClick={() => { haptics.light(); setMenuOpen(true); }} aria-label="Fun modes">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <button className="tr-pill" onClick={() => { haptics.light(); setMenuOpen(true); }} aria-label="Open fun modes">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 3l2.1 5.5L20 9.3l-4.3 3.7L17 19l-5-3-5 3 1.3-6L4 9.3l5.9-.8z" />
             </svg>
+            <span>Modes</span>
           </button>
           <button className="tr-glyph" onClick={() => { haptics.light(); setShowAbout(true); }} aria-label="About">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
           </button>

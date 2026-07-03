@@ -228,7 +228,7 @@ export default function BlindDate({ onClose }) {
                 isPlaying
                 playSignal={playSignal}
                 onEnded={goReveal}
-                onPause={goReveal}
+                onClosed={goReveal}
               />
             </div>
             <p className="blind-watching">Watching blind… no peeking at the credits.</p>

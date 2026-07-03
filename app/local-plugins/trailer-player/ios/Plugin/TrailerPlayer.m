@@ -10,5 +10,6 @@
 CAP_PLUGIN(TrailerPlayer, "TrailerPlayer",
     CAP_PLUGIN_METHOD(openTrailer, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(enqueueNext, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(setMuted, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(closeTrailer, CAPPluginReturnPromise);
 )

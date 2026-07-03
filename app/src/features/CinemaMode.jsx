@@ -251,6 +251,7 @@ export default function CinemaMode({ onClose }) {
               playSignal={playSignal}
               onEnded={advance}
               onAdvanceInPlace={advance}
+              onMuteChanged={setMuted}
             />
           </div>
         ) : null}

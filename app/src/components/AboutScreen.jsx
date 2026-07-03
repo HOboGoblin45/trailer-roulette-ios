@@ -7,8 +7,9 @@
 import { Capacitor } from '@capacitor/core';
 
 // vite.config.js injects VITE_APP_VERSION from package.json at build time;
-// the literal fallback only applies in non-Vite contexts (e.g. unit tests).
-const VERSION = import.meta.env.VITE_APP_VERSION || '2.9.0';
+// the neutral fallback only applies in non-Vite contexts (e.g. unit tests) —
+// never hardcode a real version here, it goes stale.
+const VERSION = import.meta.env.VITE_APP_VERSION || 'dev';
 
 export default function AboutScreen({ onClose }) {
   const platform = Capacitor.getPlatform();

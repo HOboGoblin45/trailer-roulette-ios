@@ -224,8 +224,13 @@ export default function RouletteWheel({ onClose }) {
   }, []);
 
   const handlePause = useCallback(() => {
-    // On iOS this fires when the user taps Done. Treat it like "finished"
-    // so we always land on the result panel rather than a blank wheel.
+    // Non-terminal: on web this is just the user pausing the video.
+    setIsPlaying(false);
+  }, []);
+
+  const handleClosed = useCallback(() => {
+    // iOS: the native modal was dismissed (Done / ended / unplayable).
+    // Always land on the result panel rather than a blank wheel.
     setIsPlaying(false);
     setPhase((p) => (p === PHASE.PLAYING ? PHASE.RESULT : p));
   }, []);
@@ -339,6 +344,7 @@ export default function RouletteWheel({ onClose }) {
             playSignal={playSignal}
             onPlay={handlePlay}
             onPause={handlePause}
+            onClosed={handleClosed}
             onEnded={handleEnded}
             onAdvanceInPlace={() => {}}
             onDurationKnown={() => {}}
@@ -355,9 +361,14 @@ export default function RouletteWheel({ onClose }) {
         )}
 
         {phase === PHASE.PLAYING && (
-          <div className="wheel-status" role="status">
-            Playing a {landedDecade?.decade}s trailer…
-          </div>
+          <>
+            <div className="wheel-status" role="status">
+              Playing a {landedDecade?.decade}s trailer…
+            </div>
+            <button className="wheel-finish-btn" onClick={handleClosed}>
+              Done watching
+            </button>
+          </>
         )}
 
         {!!error && phase !== PHASE.PLAYING && (

@@ -58,6 +58,7 @@ public class TrailerPlayer: CAPPlugin {
             return
         }
         let title = call.getString("title") ?? ""
+        let muted = call.getBool("muted") ?? false
         let nextId = sanitizedId(call.getString("nextYoutubeKey"))
         let nextTitle = call.getString("nextTitle") ?? ""
 
@@ -70,15 +71,30 @@ public class TrailerPlayer: CAPPlugin {
                 existing.dismiss(animated: false) {
                     self.pendingCall?.resolve(["dismissed": true, "reason": "replaced"])
                     self.pendingCall = nil
-                    self.presentTrailer(videoId: videoId, title: title,
+                    self.presentTrailer(videoId: videoId, title: title, muted: muted,
                                         nextId: nextId, nextTitle: nextTitle,
                                         from: presenter, call: call)
                 }
                 return
             }
-            self.presentTrailer(videoId: videoId, title: title,
+            self.presentTrailer(videoId: videoId, title: title, muted: muted,
                                 nextId: nextId, nextTitle: nextTitle,
                                 from: presenter, call: call)
+        }
+    }
+
+    /// Mute / unmute the playing video in place (YouTube IFrame API command
+    /// relayed through the proxy page). No-op (resolves false) if the player
+    /// isn't open.
+    @objc func setMuted(_ call: CAPPluginCall) {
+        let muted = call.getBool("muted") ?? true
+        DispatchQueue.main.async {
+            guard let vc = self.presentedVC else {
+                call.resolve(["applied": false, "reason": "not-open"])
+                return
+            }
+            vc.setMuted(muted)
+            call.resolve(["applied": true, "muted": muted])
         }
     }
 
@@ -104,9 +120,11 @@ public class TrailerPlayer: CAPPlugin {
                 call.resolve(["closed": false, "reason": "not-open"])
                 return
             }
-            vc.dismiss(animated: true) {
-                call.resolve(["closed": true])
-            }
+            // Route through finish() so the pending openTrailer call resolves
+            // too — dismissing the VC directly would leave that promise (and
+            // its keepAlive'd CAPPluginCall) hanging forever on the JS side.
+            vc.finishExternally(reason: "closed")
+            call.resolve(["closed": true])
         }
     }
 
@@ -117,12 +135,13 @@ public class TrailerPlayer: CAPPlugin {
         return id
     }
 
-    private func presentTrailer(videoId: String, title: String,
+    private func presentTrailer(videoId: String, title: String, muted: Bool,
                                 nextId: String?, nextTitle: String,
                                 from presenter: UIViewController, call: CAPPluginCall) {
         let vc = TrailerPlayerViewController(
             videoId: videoId,
             title: title,
+            muted: muted,
             onEvent: { [weak self] name, data in
                 // In-place lifecycle events (advance, start) while the
                 // player stays open. JS keeps its queue in sync and
@@ -173,6 +192,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
 
     private var videoId: String
     private var videoTitle: String
+    private var isMuted: Bool
     private let onEvent: (String, [String: Any]) -> Void
     private let onDismiss: (String, String) -> Void
 
@@ -184,6 +204,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     private var loadingIndicator: UIActivityIndicatorView!
     private var titleLabel: UILabel!
     private var skipButton: UIButton!
+    private var muteButton: UIButton!
 
     private var didFinish = false
     private var watchdogTimer: Timer?
@@ -224,10 +245,12 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
 
     init(videoId: String,
          title: String,
+         muted: Bool = false,
          onEvent: @escaping (String, [String: Any]) -> Void,
          onDismiss: @escaping (String, String) -> Void) {
         self.videoId = videoId
         self.videoTitle = title
+        self.isMuted = muted
         self.onEvent = onEvent
         self.onDismiss = onDismiss
         super.init(nibName: nil, bundle: nil)
@@ -316,6 +339,20 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         header.addSubview(skip)
         self.skipButton = skip
 
+        // Speaker toggle — mirrors the JS `muted` option and lets the user
+        // flip sound without leaving the player (Cinema Mode's ambient play).
+        let mute = UIButton(type: .system)
+        if #available(iOS 13.0, *) {
+            mute.setImage(UIImage(systemName: muteIconName()), for: .normal)
+        } else {
+            mute.setTitle(isMuted ? "Sound off" : "Sound on", for: .normal)
+        }
+        mute.tintColor = Self.accentColor
+        mute.translatesAutoresizingMaskIntoConstraints = false
+        mute.addTarget(self, action: #selector(muteTapped), for: .touchUpInside)
+        header.addSubview(mute)
+        self.muteButton = mute
+
         let titleLabel = UILabel()
         titleLabel.text = videoTitle.isEmpty ? "Trailer" : videoTitle
         titleLabel.textColor = Self.titleColor
@@ -346,8 +383,13 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
             skip.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor),
             skip.heightAnchor.constraint(equalToConstant: 44),
 
+            mute.trailingAnchor.constraint(equalTo: skip.leadingAnchor, constant: -10),
+            mute.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor),
+            mute.heightAnchor.constraint(equalToConstant: 44),
+            mute.widthAnchor.constraint(equalToConstant: 44),
+
             titleLabel.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(equalTo: skip.leadingAnchor, constant: -8),
+            titleLabel.trailingAnchor.constraint(equalTo: mute.leadingAnchor, constant: -8),
             titleLabel.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor),
 
             spinner.centerXAnchor.constraint(equalTo: webView.centerXAnchor),
@@ -361,7 +403,9 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         components.scheme = "https"
         components.host = Self.proxyHost
         components.path = "/embed"
-        components.queryItems = [URLQueryItem(name: "v", value: videoId)]
+        var items = [URLQueryItem(name: "v", value: videoId)]
+        if isMuted { items.append(URLQueryItem(name: "mute", value: "1")) }
+        components.queryItems = items
         guard let url = components.url else {
             dismissUnplayable("invalid-url")
             return
@@ -382,10 +426,38 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 12.0, repeats: false) { [weak self] _ in
             guard let self = self, !self.didFinish, !self.sawPlaying else { return }
             if self.nextVideoId != nil {
-                self.advanceInPlace(reason: "advanced")
+                self.advanceInPlace(reason: "advanced", cause: "unplayable")
             } else {
                 self.dismissUnplayable("watchdog")
             }
+        }
+    }
+
+    /// Apply mute/unmute to the live YT player via the IFrame API's
+    /// postMessage command channel — injected from the proxy page's own
+    /// context, so it works even on proxy versions that predate trMute.
+    func setMuted(_ muted: Bool) {
+        isMuted = muted
+        refreshMuteAffordance()
+        let fn = muted ? "mute" : "unMute"
+        let js = """
+        (function(){try{var f=document.getElementById('yt');if(!f)return 'no';
+        f.contentWindow.postMessage(JSON.stringify({event:'command',func:'\(fn)',args:[]}),'*');
+        return 'ok';}catch(e){return 'err';}})()
+        """
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    private func muteIconName() -> String {
+        return isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"
+    }
+
+    private func refreshMuteAffordance() {
+        guard let btn = muteButton else { return }
+        if #available(iOS 13.0, *) {
+            btn.setImage(UIImage(systemName: muteIconName()), for: .normal)
+        } else {
+            btn.setTitle(isMuted ? "Sound off" : "Sound on", for: .normal)
         }
     }
 
@@ -409,7 +481,9 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
 
     /// Chain to the queued next video without dismissing the modal. This is
     /// what makes playback continuous — no dismiss/re-present flash.
-    private func advanceInPlace(reason: String) {
+    /// `cause` tells JS *why* ("ended" | "unplayable" | "user") so it can e.g.
+    /// blocklist a dead video id without interrupting the session.
+    private func advanceInPlace(reason: String, cause: String = "ended") {
         guard let next = nextVideoId else { return }
         let played = videoId
         videoId = next
@@ -420,7 +494,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         refreshSkipAffordance()
         // Tell JS: we advanced in place. JS shifts its queue, updates the
         // metadata panel beneath the modal, and enqueues the next key.
-        onEvent("trailerEvent", ["event": reason, "from": played, "youtubeKey": next])
+        onEvent("trailerEvent", ["event": reason, "cause": cause, "from": played, "youtubeKey": next])
         swapVideo(next)
     }
 
@@ -435,9 +509,21 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         finish(reason: "user")
     }
 
+    @objc private func muteTapped() {
+        setMuted(!isMuted)
+        // Keep the JS side's muted state in sync with the in-player toggle.
+        onEvent("trailerEvent", ["event": "muteChanged", "muted": isMuted])
+    }
+
+    /// External close (plugin closeTrailer / app backgrounded). Resolves the
+    /// pending openTrailer call via onDismiss like any other finish.
+    func finishExternally(reason: String) {
+        finish(reason: reason)
+    }
+
     @objc private func skipTapped() {
         if nextVideoId != nil {
-            advanceInPlace(reason: "skipped")
+            advanceInPlace(reason: "skipped", cause: "user")
         } else {
             // Nothing primed — exit and let JS advance + reopen.
             finish(reason: "skip")
@@ -452,6 +538,18 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         DispatchQueue.main.async { [weak self] in
             self?.onDismiss(reason, played)
             self?.dismiss(animated: true)
+        }
+    }
+
+    /// Safety net: if the VC disappears through any path that didn't go
+    /// through finish() (OS-level dismissal, parent teardown), still resolve
+    /// the pending call so the JS side never awaits a dead modal.
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if !didFinish && (isBeingDismissed || presentingViewController == nil) {
+            didFinish = true
+            watchdogTimer?.invalidate(); watchdogTimer = nil
+            onDismiss("closed", videoId)
         }
     }
 
@@ -574,13 +672,13 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
                 // Bad video — skip in place if we can, so a single dead
                 // trailer never interrupts a continuous session.
                 if nextVideoId != nil {
-                    advanceInPlace(reason: "advanced")
+                    advanceInPlace(reason: "advanced", cause: "unplayable")
                 } else {
                     dismissUnplayable("yt:\(code)")
                 }
             } else {
                 if nextVideoId != nil {
-                    advanceInPlace(reason: "advanced")
+                    advanceInPlace(reason: "advanced", cause: "unplayable")
                 } else {
                     dismissUnplayable("yt:unknown:\(code)")
                 }
