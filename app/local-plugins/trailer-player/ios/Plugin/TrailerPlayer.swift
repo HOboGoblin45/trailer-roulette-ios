@@ -1,6 +1,6 @@
 //
 //  TrailerPlayer.swift
-//  Trailer Roulette — in-app YouTube playback (v2.0.0, continuous).
+//  Trailer Roulette — in-app YouTube playback (v3.0.0, Liquid Glass).
 //
 //  Architecture (verified in headless WebKit with iOS UA):
 //
@@ -16,8 +16,24 @@
 //       YouTube IFrame Player events to native via webkit.messageHandlers
 //       .trailerEvent. We get onReady, stateChange (1=PLAYING, 0=ENDED),
 //       and onError.
-//    5. Custom UI chrome (Done + Skip buttons, title, white header,
-//       black video stage) so the experience feels in-app.
+//    5. iOS 26 Liquid Glass chrome — controls float over full-bleed video
+//       behind a glass header with specular highlights and motion response.
+//       Falls back to dark translucent blur on iOS 15–25.
+//
+//  v3.1.0 — AD-AWARE END DETECTION:
+//    YouTube fires onStateChange ENDED (0) when a pre-roll AD finishes, before
+//    the real trailer plays. Advancing on that raw event cut every ad-backed
+//    trailer off after ~15s. We now confirm a real end (playback reached the
+//    video's end, or it stays ended without an ad boundary resuming playback
+//    within ~1.2s) before advancing. Mirrors endDetection.js and the proxy.
+//
+//  v3.0.0 — LIQUID GLASS (iOS 26 HIG):
+//    The header bar now uses UIGlassEffect on iOS 26+ for authentic Liquid
+//    Glass material (light bending, specular highlights, device-motion
+//    responsiveness). The video is full-bleed beneath the glass header.
+//    A gradient fade smooths the transition from glass to content.
+//    On older iOS, a dark translucent blur provides a similar but static
+//    frosted look.
 //
 //  v2.0.0 — CONTINUOUS PLAYBACK:
 //    The modal no longer dismisses between trailers. When a trailer ends
@@ -186,6 +202,32 @@ public class TrailerPlayer: CAPPlugin {
     }
 }
 
+// MARK: - Gradient fade view (glass → content transition)
+
+/// A 32pt gradient layer that sits between the glass header and the video,
+/// smoothing the edge where translucent chrome meets full-bleed content.
+private class GradientFadeView: UIView {
+    private let gradientLayer = CAGradientLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        gradientLayer.colors = [
+            UIColor.black.withAlphaComponent(0.45).cgColor,
+            UIColor.black.withAlphaComponent(0.0).cgColor,
+        ]
+        gradientLayer.locations = [0.0, 1.0]
+        layer.addSublayer(gradientLayer)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        gradientLayer.frame = bounds
+    }
+}
+
 // MARK: - View controller
 
 class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
@@ -210,10 +252,23 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     private var watchdogTimer: Timer?
     private var sawPlaying = false
 
-    // Immersive dark theme to match the full-bleed video feed: black stage +
-    // header (controls float over the video), white title, light-blue accents.
+    // Ad-aware end detection (v3.1.0). YouTube fires onStateChange ENDED (0)
+    // when a pre-roll AD finishes, before the real trailer plays; advancing on
+    // that raw event is the "trailers only play ~15s" bug. We confirm a real
+    // end the same way the web player (endDetection.js) and proxy do: accept it
+    // immediately only if playback reached the end of a plausibly-long video,
+    // otherwise wait briefly — an ad boundary resumes playback (state 1/3) and
+    // cancels the pending end, while a real end resumes nothing.
+    private var endConfirmTimer: Timer?
+    private var lastContentTime: Double = 0
+    private var lastContentDuration: Double = 0
+    private static let endConfirmSeconds: TimeInterval = 1.2
+    private static let minContentSeconds: Double = 32
+    private static let endEpsilonSeconds: Double = 1.5
+
+    // Immersive dark theme — video fills the entire screen, Liquid Glass
+    // header floats above it. Blue accents, near-white title.
     private static let stageColor = UIColor.black
-    private static let headerColor = UIColor.black
     private static let accentColor = UIColor(red: 0.239, green: 0.647, blue: 0.957, alpha: 1.0) // #3DA5F4
     private static let titleColor = UIColor(red: 0.961, green: 0.961, blue: 0.961, alpha: 1.0)  // near-white
 
@@ -257,7 +312,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit { watchdogTimer?.invalidate() }
+    deinit { watchdogTimer?.invalidate(); endConfirmTimer?.invalidate() }
 
     /// Update what we chain to when the current trailer ends or is skipped.
     func setNext(videoId: String?, title: String) {
@@ -272,7 +327,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         super.viewDidLoad()
         view.backgroundColor = Self.stageColor
         setupWebView()
-        setupChrome()
+        setupGlassChrome()
         loadVideo(videoId: videoId)
     }
 
@@ -305,8 +360,11 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
 
+        // v3.0.0: Full-bleed video — pin to view.topAnchor so the video
+        // extends behind the glass header. Previously pinned to
+        // safeAreaLayoutGuide.topAnchor + 48 (solid black header).
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 48),
+            webView.topAnchor.constraint(equalTo: view.topAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -315,53 +373,73 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         self.webView = webView
     }
 
-    private func setupChrome() {
-        // White header bar across the top safe area + 48pt control row.
-        let header = UIView()
-        header.backgroundColor = Self.headerColor
-        header.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(header)
+    /// v3.0.0: Glass chrome — UIGlassEffect on iOS 26+ for real Liquid Glass,
+    /// UIBlurEffect(.systemChromeMaterialDark) fallback on iOS 15–25.
+    /// Controls float inside the effect view's contentView so they sit
+    /// within the glass material, not on top of a plain UIView.
+    private func setupGlassChrome() {
+        // Create the glass/blur effect view
+        let effectView: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            let glassEffect = UIGlassEffect()
+            glassEffect.isInteractive = true
+            effectView = UIVisualEffectView(effect: glassEffect)
+        } else {
+            let blurEffect = UIBlurEffect(style: .systemChromeMaterialDark)
+            effectView = UIVisualEffectView(effect: blurEffect)
+        }
+        effectView.translatesAutoresizingMaskIntoConstraints = false
 
+        // Bottom corners only — the glass header sits at the top of the
+        // screen so the top corners touch the display edge.
+        effectView.layer.cornerRadius = 16
+        effectView.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        effectView.clipsToBounds = true
+        view.addSubview(effectView)
+
+        // The contentView is where controls go — they render INSIDE the
+        // glass material, not floating above it.
+        let chrome = effectView.contentView
+
+        // Done button — left side
         let doneButton = UIButton(type: .system)
         doneButton.setTitle("Done", for: .normal)
         doneButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
         doneButton.setTitleColor(Self.accentColor, for: .normal)
         doneButton.translatesAutoresizingMaskIntoConstraints = false
         doneButton.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
-        header.addSubview(doneButton)
+        chrome.addSubview(doneButton)
 
+        // Skip button — right side
         let skip = UIButton(type: .system)
         skip.setTitle("Skip ▸", for: .normal)
         skip.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
         skip.setTitleColor(Self.accentColor, for: .normal)
         skip.translatesAutoresizingMaskIntoConstraints = false
         skip.addTarget(self, action: #selector(skipTapped), for: .touchUpInside)
-        header.addSubview(skip)
+        chrome.addSubview(skip)
         self.skipButton = skip
 
-        // Speaker toggle — mirrors the JS `muted` option and lets the user
-        // flip sound without leaving the player (Cinema Mode's ambient play).
+        // Mute toggle — to the left of Skip
         let mute = UIButton(type: .system)
-        if #available(iOS 13.0, *) {
-            mute.setImage(UIImage(systemName: muteIconName()), for: .normal)
-        } else {
-            mute.setTitle(isMuted ? "Sound off" : "Sound on", for: .normal)
-        }
+        mute.setImage(UIImage(systemName: muteIconName()), for: .normal)
         mute.tintColor = Self.accentColor
         mute.translatesAutoresizingMaskIntoConstraints = false
         mute.addTarget(self, action: #selector(muteTapped), for: .touchUpInside)
-        header.addSubview(mute)
+        chrome.addSubview(mute)
         self.muteButton = mute
 
+        // Title label — centered between Done and Mute
         let titleLabel = UILabel()
         titleLabel.text = videoTitle.isEmpty ? "Trailer" : videoTitle
         titleLabel.textColor = Self.titleColor
         titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
         titleLabel.textAlignment = .center
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(titleLabel)
+        chrome.addSubview(titleLabel)
         self.titleLabel = titleLabel
 
+        // Loading spinner — centered on the webView
         let spinner = UIActivityIndicatorView(style: .large)
         spinner.color = Self.accentColor
         spinner.translatesAutoresizingMaskIntoConstraints = false
@@ -369,31 +447,49 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         view.addSubview(spinner)
         self.loadingIndicator = spinner
 
-        NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: view.topAnchor),
-            header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            header.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 48),
+        // Gradient fade — 32pt strip below the glass header
+        let gradient = GradientFadeView()
+        gradient.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(gradient)
 
-            doneButton.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 16),
-            doneButton.bottomAnchor.constraint(equalTo: header.bottomAnchor, constant: -2),
+        NSLayoutConstraint.activate([
+            // Effect view: spans full width, from top of screen to
+            // safe area top + 48pt (same height as the old solid header).
+            effectView.topAnchor.constraint(equalTo: view.topAnchor),
+            effectView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            effectView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            effectView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 48),
+
+            // Done button — bottom-left of glass chrome
+            doneButton.leadingAnchor.constraint(equalTo: chrome.leadingAnchor, constant: 16),
+            doneButton.bottomAnchor.constraint(equalTo: chrome.bottomAnchor, constant: -2),
             doneButton.heightAnchor.constraint(equalToConstant: 44),
 
-            skip.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -16),
+            // Skip button — bottom-right of glass chrome
+            skip.trailingAnchor.constraint(equalTo: chrome.trailingAnchor, constant: -16),
             skip.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor),
             skip.heightAnchor.constraint(equalToConstant: 44),
 
+            // Mute button — left of Skip
             mute.trailingAnchor.constraint(equalTo: skip.leadingAnchor, constant: -10),
             mute.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor),
             mute.heightAnchor.constraint(equalToConstant: 44),
             mute.widthAnchor.constraint(equalToConstant: 44),
 
+            // Title — centered between Done and Mute
             titleLabel.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 8),
             titleLabel.trailingAnchor.constraint(equalTo: mute.leadingAnchor, constant: -8),
             titleLabel.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor),
 
+            // Spinner — centered on video
             spinner.centerXAnchor.constraint(equalTo: webView.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: webView.centerYAnchor),
+
+            // Gradient fade — 32pt strip directly below glass header
+            gradient.topAnchor.constraint(equalTo: effectView.bottomAnchor),
+            gradient.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            gradient.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            gradient.heightAnchor.constraint(equalToConstant: 32),
         ])
     }
 
@@ -403,7 +499,13 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         components.scheme = "https"
         components.host = Self.proxyHost
         components.path = "/embed"
-        var items = [URLQueryItem(name: "v", value: videoId)]
+        // v3.0.0: hide YouTube's own chrome so the Liquid Glass header owns the UI.
+        var items = [
+            URLQueryItem(name: "v", value: videoId),
+            URLQueryItem(name: "controls", value: "0"),
+            URLQueryItem(name: "iv_load_policy", value: "3"),
+            URLQueryItem(name: "fs", value: "0"),
+        ]
         if isMuted { items.append(URLQueryItem(name: "mute", value: "1")) }
         components.queryItems = items
         guard let url = components.url else {
@@ -412,6 +514,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         }
 
         sawPlaying = false
+        resetContentProgress()
         loadingIndicator?.startAnimating()
         // Direct HTTPS navigation. The proxy page handles the YT iframe.
         webView.load(URLRequest(url: url))
@@ -431,6 +534,56 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
                 self.dismissUnplayable("watchdog")
             }
         }
+    }
+
+    private func resetContentProgress() {
+        lastContentTime = 0
+        lastContentDuration = 0
+        cancelEndConfirm()
+    }
+
+    private func cancelEndConfirm() {
+        endConfirmTimer?.invalidate()
+        endConfirmTimer = nil
+    }
+
+    /// Decide whether a YouTube ENDED (0) is a real end or a pre-roll ad
+    /// boundary. Fast path: if playback reached the end of a plausibly-long
+    /// video, it's real. Otherwise wait endConfirmSeconds — an ad boundary
+    /// resumes playback (state 1/3) and cancels this; a real end doesn't.
+    private func handleEndCandidate() {
+        if didFinish { return }
+        if lastContentDuration > 0,
+           lastContentTime >= lastContentDuration - Self.endEpsilonSeconds,
+           lastContentTime >= Self.minContentSeconds {
+            performConfirmedEnd()
+            return
+        }
+        cancelEndConfirm()
+        endConfirmTimer = Timer.scheduledTimer(withTimeInterval: Self.endConfirmSeconds, repeats: false) { [weak self] _ in
+            guard let self = self, !self.didFinish else { return }
+            self.endConfirmTimer = nil
+            self.performConfirmedEnd()
+        }
+    }
+
+    /// A confirmed real end: chain to the next trailer in place if primed,
+    /// else finish so JS advances + reopens (the proven fallback path).
+    private func performConfirmedEnd() {
+        cancelEndConfirm()
+        if nextVideoId != nil {
+            advanceInPlace(reason: "advanced")
+        } else {
+            finish(reason: "ended")
+        }
+    }
+
+    /// JS/JSON numbers arrive as NSNumber; coerce to Double defensively.
+    private func numberValue(_ raw: Any?) -> Double? {
+        if let n = raw as? NSNumber { return n.doubleValue }
+        if let d = raw as? Double { return d }
+        if let i = raw as? Int { return Double(i) }
+        return nil
     }
 
     /// Apply mute/unmute to the live YT player via the IFrame API's
@@ -454,11 +607,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
 
     private func refreshMuteAffordance() {
         guard let btn = muteButton else { return }
-        if #available(iOS 13.0, *) {
-            btn.setImage(UIImage(systemName: muteIconName()), for: .normal)
-        } else {
-            btn.setTitle(isMuted ? "Sound off" : "Sound on", for: .normal)
-        }
+        btn.setImage(UIImage(systemName: muteIconName()), for: .normal)
     }
 
     /// Gapless swap (v2.9.0): ask the already-initialized proxy page to swap
@@ -467,6 +616,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     /// so playback always works regardless of which proxy version is live.
     private func swapVideo(_ id: String) {
         sawPlaying = false
+        resetContentProgress()
         loadingIndicator?.startAnimating()
         let js = "(typeof window.trLoad==='function' && window.trLoad('\(id)')) ? 'ok' : 'no'"
         webView.evaluateJavaScript(js) { [weak self] result, _ in
@@ -534,6 +684,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         guard !didFinish else { return }
         didFinish = true
         watchdogTimer?.invalidate(); watchdogTimer = nil
+        endConfirmTimer?.invalidate(); endConfirmTimer = nil
         let played = videoId
         DispatchQueue.main.async { [weak self] in
             self?.onDismiss(reason, played)
@@ -549,6 +700,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         if !didFinish && (isBeingDismissed || presentingViewController == nil) {
             didFinish = true
             watchdogTimer?.invalidate(); watchdogTimer = nil
+            endConfirmTimer?.invalidate(); endConfirmTimer = nil
             onDismiss("closed", videoId)
         }
     }
@@ -641,22 +793,28 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         case "stateChange":
             // 1=PLAYING, 0=ENDED, 2=PAUSED, 3=BUFFERING, 5=CUED
             let state = (body["state"] as? Int) ?? -99
-            if state == 1 {
-                // Real playback — kill watchdog so we don't dismiss a
-                // healthy long trailer, hide any loading spinner (a gapless
-                // trLoad swap fires no navigation event), and tell JS.
-                sawPlaying = true
-                watchdogTimer?.invalidate(); watchdogTimer = nil
-                loadingIndicator?.stopAnimating()
-                onEvent("trailerEvent", ["event": "started", "youtubeKey": videoId])
-            } else if state == 0 {
-                // Trailer finished. Chain in place if primed; else exit
-                // and let JS advance + reopen (the proven v1.9 path).
-                if nextVideoId != nil {
-                    advanceInPlace(reason: "advanced")
-                } else {
-                    finish(reason: "ended")
+            // The v3.1.0 proxy also sends the player's current time / duration
+            // so we can tell a real end from a pre-roll ad boundary. Older
+            // proxies omit these; the confirm timer covers that case.
+            if let t = numberValue(body["t"]) { lastContentTime = t }
+            if let d = numberValue(body["d"]), d > 0 { lastContentDuration = d }
+            if state == 1 || state == 3 {
+                // PLAYING or BUFFERING: playback (re)started, so any pending
+                // "ended" was a pre-roll ad boundary — cancel it.
+                cancelEndConfirm()
+                if state == 1 {
+                    // Real playback — kill watchdog so we don't dismiss a
+                    // healthy long trailer, hide any loading spinner (a gapless
+                    // trLoad swap fires no navigation event), and tell JS.
+                    sawPlaying = true
+                    watchdogTimer?.invalidate(); watchdogTimer = nil
+                    loadingIndicator?.stopAnimating()
+                    onEvent("trailerEvent", ["event": "started", "youtubeKey": videoId])
                 }
+            } else if state == 0 {
+                // Trailer *or a pre-roll ad* finished. Confirm it's a real end
+                // before advancing — see handleEndCandidate().
+                handleEndCandidate()
             }
 
         case "error":

@@ -5,6 +5,15 @@
  * to directly as the WKWebView's main frame. Verified in headless WebKit
  * with iOS UA — Rick Astley plays in 2-3 seconds.
  *
+ * v3.1.0: ad-aware end detection. YouTube fires onStateChange ENDED (0) when
+ * a pre-roll AD finishes, before the real video plays; forwarding that raw
+ * event cut trailers off after ~15s. The page now tracks playback progress
+ * (infoDelivery currentTime/duration) and only forwards a real end — one that
+ * reached the video's true end, or that stays ended without an ad boundary
+ * resuming playback within a short window. Backward compatible: the forwarded
+ * event still carries { kind:'stateChange', state } (now plus t/d), which older
+ * native builds ignore, so already-shipped builds get the fix too.
+ *
  * Why this works where every other approach failed:
  *   - The page is at https://trailer-roulette.vercel.app/embed (a real
  *     third-party https origin from YouTube's perspective)
@@ -42,6 +51,8 @@ export default async function handler(request) {
   const autoplay = url.searchParams.get('autoplay') === '0' ? '0' : '1';
   const mute = url.searchParams.get('mute') === '1' ? '1' : '0';
   const controls = url.searchParams.get('controls') === '0' ? '0' : '1';
+  const ivLoadPolicy = url.searchParams.get('iv_load_policy') === '3' ? '3' : '1';
+  const fs = url.searchParams.get('fs') === '0' ? '0' : '1';
 
   if (!VALID_ID.test(v)) {
     return new Response(`<!doctype html><meta charset=utf-8><title>Trailer</title><body style="margin:0;background:#000;color:#aaa;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh">Invalid or missing video id.</body>`, {
@@ -61,6 +72,8 @@ export default async function handler(request) {
     `?autoplay=${autoplay}` +
     `&mute=${mute}` +
     `&controls=${controls}` +
+    `&iv_load_policy=${ivLoadPolicy}` +
+    `&fs=${fs}` +
     `&playsinline=1` +
     `&rel=0` +
     `&modestbranding=1` +
@@ -121,6 +134,21 @@ export default async function handler(request) {
     toNative({ kind: 'iframeLoaded' });
   });
 
+  // Ad-aware end detection (v3.1.0) -------------------------------------
+  // YouTube fires onStateChange ENDED (0) when a PRE-ROLL AD finishes, before
+  // the real video plays. Forwarding that as "ended" cut the trailer off after
+  // ~15s. We only forward a real end: either playback reached the end of a
+  // plausibly-long video, or the player stays ended without resuming within a
+  // short confirm window (an ad boundary resumes playback and cancels it). The
+  // native plugin (TrailerPlayer.swift) and the web player (endDetection.js)
+  // mirror this exact logic, so the fix holds even on older app builds and
+  // even if a build ships before this proxy is redeployed.
+  var CONFIRM_MS = 1200, MIN_CONTENT = 32, END_EPS = 1.5;
+  var lastTime = 0, lastDuration = 0, endTimer = null;
+  function clearEndTimer() { if (endTimer) { clearTimeout(endTimer); endTimer = null; } }
+  function forwardEnded() { clearEndTimer(); toNative({ kind: 'stateChange', state: 0, t: lastTime, d: lastDuration }); }
+  function resetProgress() { lastTime = 0; lastDuration = 0; clearEndTimer(); }
+
   // Gapless swap (v2.9.0): swap the playing video WITHOUT reloading the page.
   // The native player calls window.trLoad('NEWID') instead of navigating to a
   // fresh /embed?v=NEWID — the YT player is already initialized, so this is a
@@ -130,6 +158,7 @@ export default async function handler(request) {
   window.trLoad = function (id) {
     if (!VALID.test(id || '')) return false;
     try {
+      resetProgress(); // new video — forget the previous clip's progress
       iframe.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'loadVideoById', args: [String(id)] }),
         'https://www.youtube-nocookie.com'
@@ -146,8 +175,8 @@ export default async function handler(request) {
   //   { event: 'onStateChange', info: 1 }   // 1 = PLAYING, 0 = ENDED, etc.
   //   { event: 'onError', info: 101 }
   //   { event: 'onReady' }
-  //   { event: 'initialDelivery', ... }
-  //   { event: 'infoDelivery', info: { ... } }
+  //   { event: 'initialDelivery', info: { currentTime, duration, ... } }
+  //   { event: 'infoDelivery', info: { currentTime, duration, ... } }
   window.addEventListener('message', function (e) {
     if (!e || !e.data) return;
     if (e.origin !== 'https://www.youtube-nocookie.com' && e.origin !== 'https://www.youtube.com') return;
@@ -156,8 +185,35 @@ export default async function handler(request) {
       try { data = JSON.parse(data); } catch (err) { return; }
     }
     if (!data || !data.event) return;
+
+    if (data.event === 'infoDelivery' || data.event === 'initialDelivery') {
+      // Track playback progress so we can tell a real end from an ad boundary.
+      var info = data.info || {};
+      if (typeof info.currentTime === 'number' && isFinite(info.currentTime)) lastTime = info.currentTime;
+      if (typeof info.duration === 'number' && isFinite(info.duration) && info.duration > 0) lastDuration = info.duration;
+      return;
+    }
+
     if (data.event === 'onStateChange') {
-      toNative({ kind: 'stateChange', state: data.info });
+      var state = data.info;
+      if (state === 1 || state === 3) {
+        // PLAYING / BUFFERING — playback (re)started, so any pending "ended"
+        // was a pre-roll ad boundary. Cancel it and forward the live state.
+        clearEndTimer();
+        toNative({ kind: 'stateChange', state: state, t: lastTime, d: lastDuration });
+      } else if (state === 0) {
+        // ENDED — real end or ad boundary. Fast-path only if playback reached
+        // the end of a plausibly-long clip; otherwise wait to confirm.
+        if (lastDuration > 0 && lastTime >= lastDuration - END_EPS && lastTime >= MIN_CONTENT) {
+          forwardEnded();
+        } else {
+          clearEndTimer();
+          endTimer = setTimeout(forwardEnded, CONFIRM_MS);
+        }
+      } else {
+        // PAUSED (2), CUED (5), UNSTARTED (-1) — forward unchanged.
+        toNative({ kind: 'stateChange', state: state, t: lastTime, d: lastDuration });
+      }
     } else if (data.event === 'onError') {
       toNative({ kind: 'error', code: data.info });
     } else if (data.event === 'onReady') {

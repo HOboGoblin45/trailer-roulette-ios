@@ -4,6 +4,60 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-07-07
+
+Playback fix: trailers were cut off after ~15 seconds.
+
+### Fixed
+- **Trailers only played for ~15 seconds, then auto-advanced.** YouTube serves
+  a pre-roll ad on many trailers, and the IFrame Player fires `onStateChange`
+  → `ENDED` (0) when the *ad* finishes — before the real trailer plays. Every
+  playback path treated that as "trailer over" and skipped to the next one.
+  Now all three paths confirm a real end before advancing: they accept an
+  `ENDED` immediately only when playback reached the video's true end
+  (`currentTime ≈ duration` on a clip ≥ 32s), otherwise they wait ~1.2s — a
+  pre-roll ad boundary resumes playback (state PLAYING/BUFFERING) and cancels
+  the pending end, while a genuine end resumes nothing.
+  - New `src/lib/endDetection.js` — a pure, unit-tested `createEndDetector`
+    (progress fast-path + resume-confirm), with 10 tests covering pre-roll
+    ads, ad pods, short teasers, and the no-progress fallback.
+  - `Player.web.jsx` routes every state through the detector and now also
+    reports each trailer's real duration (so the web backstop timer matches
+    the clip instead of the old fixed 90s, which would clip long trailers).
+  - `TrailerPlayer.swift` confirms the end natively (works even against an
+    un-redeployed proxy), reading optional `t`/`d` progress from the proxy.
+  - `landing-page/api/embed.js` tracks `infoDelivery` progress and only
+    forwards a real end; backward compatible, so builds already in review get
+    the fix once the proxy is redeployed.
+
+### Deploy notes
+- Redeploy the Vercel `landing-page` so the embed proxy carries the fix
+  (`scripts/06-deploy-vercel.ps1`). The iOS fix does **not** depend on it — the
+  native confirm covers a stale proxy — but redeploying makes real ends instant
+  and fixes already-shipped TestFlight builds too.
+
+## [3.0.0] — 2026-07-03
+
+### Added
+- **Liquid Glass player chrome (iOS 26).** The trailer player header is now
+  Apple's Liquid Glass material (`UIGlassEffect`) with specular highlights and
+  device-motion response on iOS 26+, and a dark frosted-blur fallback
+  (`.systemChromeMaterialDark`) on iOS 15–25. Video plays full-bleed behind
+  the translucent header, with a 32pt gradient fade smoothing the edge.
+
+### Changed
+- The native player now requests `controls=0`, `iv_load_policy=3`, `fs=0` on the
+  embed so the glass chrome owns all controls (no double YouTube UI). The Vercel
+  embed proxy forwards these params, with backward-compatible defaults so the
+  in-review 2.11.0 build is unaffected.
+- **Minimum iOS raised to 15.0** (was 14.0) — required by the Liquid Glass
+  chrome and its blur fallback.
+
+### Build
+- Requires **Xcode 26 / iOS 26 SDK** to compile `UIGlassEffect` (runtime-guarded
+  by `if #available(iOS 26.0, *)`).
+
+
 ## [2.11.0] — 2026-07-02
 
 Liquid Glass redesign + a full-codebase bug-fix pass.

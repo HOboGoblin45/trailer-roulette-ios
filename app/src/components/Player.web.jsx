@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { embedUrl } from '../lib/youtube.js';
 import { loadYouTubeIframeAPI, PlayerState } from '../lib/ytIframeApi.js';
+import { createEndDetector } from '../lib/endDetection.js';
 
 /**
  * Web player — same YouTube IFrame Player API as iOS, so cycle behavior
  * (real onEnded, real duration, in-place loadVideoById) is identical
  * across platforms in dev and prod.
+ *
+ * Ad-aware end detection (v3.1.0): YouTube fires an onStateChange ENDED (0)
+ * when a *pre-roll ad* finishes, before the real trailer plays. Advancing on
+ * that raw event cut trailers off after ~15s. We route every state through
+ * createEndDetector, which only reports a real end once playback reached the
+ * video's true end (or stayed ended without an ad boundary resuming it).
  *
  * Falls back to a static iframe embed if the IFrame API can't load.
  */
@@ -21,6 +28,8 @@ export default function PlayerWeb({
   const containerRef = useRef(null);
   const playerRef = useRef(null);
   const lastLoadedKeyRef = useRef(null);
+  const detectorRef = useRef(null);
+  const durationKeyRef = useRef(null);
   const [apiReady, setApiReady] = useState(false);
   const [apiFailed, setApiFailed] = useState(false);
 
@@ -47,6 +56,42 @@ export default function PlayerWeb({
     const YT = window.YT;
     let destroyed = false;
     let player;
+
+    // Report the active video's real duration (once per key) so the parent's
+    // backstop cycle timer matches the trailer length instead of the 90s
+    // default — otherwise long trailers would be cut off at 90s.
+    const reportDuration = () => {
+      const p = playerRef.current;
+      if (!p) return;
+      try {
+        const d = p.getDuration?.();
+        const key = lastLoadedKeyRef.current;
+        if (d && Number.isFinite(d) && d > 0 && durationKeyRef.current !== key) {
+          durationKeyRef.current = key;
+          onDurationKnownRef.current?.(d);
+        }
+      } catch { /* noop */ }
+    };
+
+    // Ad-aware end detection: ignore the spurious ENDED that fires when a
+    // pre-roll ad finishes; only advance on a genuine end. See endDetection.js.
+    const detector = createEndDetector({
+      onEnd: () => onEndedRef.current?.(),
+      getProgress: () => {
+        const pl = playerRef.current;
+        if (!pl) return null;
+        try {
+          const currentTime = pl.getCurrentTime?.();
+          const duration = pl.getDuration?.();
+          if (Number.isFinite(currentTime) && Number.isFinite(duration)) {
+            return { currentTime, duration };
+          }
+        } catch { /* noop */ }
+        return null;
+      },
+    });
+    detectorRef.current = detector;
+
     try {
       player = new YT.Player(containerRef.current, {
         videoId: trailer.youtubeKey,
@@ -67,20 +112,26 @@ export default function PlayerWeb({
             if (destroyed) return;
             playerRef.current = e.target;
             lastLoadedKeyRef.current = trailer.youtubeKey;
-            try {
-              const d = e.target.getDuration();
-              if (d && Number.isFinite(d)) onDurationKnownRef.current?.(d);
-            } catch { /* noop */ }
+            reportDuration();
             onPlayRef.current?.();
           },
           onStateChange: (e) => {
             if (destroyed) return;
-            if (e.data === PlayerState.ENDED) onEndedRef.current?.();
-            else if (e.data === PlayerState.PLAYING) onPlayRef.current?.();
+            // Feed EVERY state to the ad-aware detector; it decides when a real
+            // end happened and cancels itself when an ad boundary resumes.
+            detector.onState(e.data);
+            if (e.data === PlayerState.PLAYING) { reportDuration(); onPlayRef.current?.(); }
             else if (e.data === PlayerState.PAUSED) onPauseRef.current?.();
           },
           onError: (e) => {
-            if ([100, 101, 150, 152].includes(e.data)) onEndedRef.current?.();
+            // 2=invalid id, 5=HTML5 player error, 100=not found,
+            // 101/150/152=embedding disabled. All are dead ends for this key:
+            // skip it and blocklist so it can't resurface this session (parity
+            // with the native player). Use the currently-loaded key, not the
+            // closure's original — this handler outlives loadVideoById swaps.
+            if ([2, 5, 100, 101, 150, 152].includes(e.data)) {
+              onEndedRef.current?.({ unplayable: true, youtubeKey: lastLoadedKeyRef.current });
+            }
           },
         },
       });
@@ -89,9 +140,12 @@ export default function PlayerWeb({
     }
     return () => {
       destroyed = true;
+      try { detector.dispose(); } catch { /* noop */ }
+      detectorRef.current = null;
       try { player?.destroy?.(); } catch { /* noop */ }
       playerRef.current = null;
       lastLoadedKeyRef.current = null;
+      durationKeyRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiReady, !!trailer?.youtubeKey]);
@@ -101,6 +155,7 @@ export default function PlayerWeb({
     if (!key || !playerRef.current) return;
     if (lastLoadedKeyRef.current === key) return;
     try {
+      detectorRef.current?.reset(); // drop any pending end from the previous video
       playerRef.current.loadVideoById(key);
       lastLoadedKeyRef.current = key;
     } catch { /* noop */ }

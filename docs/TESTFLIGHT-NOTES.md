@@ -2,6 +2,40 @@
 
 Pasted into the TestFlight Build Notes field for each beta. Tells testers what's new in this build and what specifically needs attention.
 
+## v3.1.0 (current build) — paste this one
+
+> **Trailer Roulette v3.1.0**
+>
+> **The fix in this build:** trailers used to stop after ~15 seconds and jump
+> to the next one. That was a YouTube pre-roll ad ending being mistaken for the
+> trailer ending. Trailers now play all the way through.
+>
+> **Please test**
+> 1. **Cold launch** loads to the shuffle screen within ~2s.
+> 2. **Tap Play** — the trailer opens and plays. Let several run end-to-end and
+>    confirm each plays in full (not ~15s) before it auto-advances to the next.
+>    Try a mix of new blockbusters and older titles (ads are more common on
+>    popular ones — those were the worst-hit before).
+> 3. **Tap Play again while one is playing** ("Spin") — it should jump to a
+>    fresh random trailer.
+> 4. **AirPlay** — with an Apple TV/HomePod nearby, tap AirPlay; the system
+>    picker appears and playback moves to the TV.
+> 5. **Modes** (top-right pill) — open a fun mode, watch a trailer, come back.
+> 6. **Done** inside the player ends the session; Play resumes.
+> 7. **Background + return** — leave the app mid-trailer and come back; one tap
+>    on Play resumes on the same trailer (it should not silently skip one).
+>
+> **Known limitations**
+> - AirPlay only works on a real device, not the simulator.
+> - First load may be slightly slower while the first trailer key is fetched.
+>
+> **Report bugs:** in-app TestFlight feedback (screenshot + note), or email
+> crescicharles@gmail.com with steps to reproduce.
+
+> NOTE: the v1.0 note below is historical — that build had swipe/watchlist/
+> filters/SFSafariViewController, all removed in the 2026-06 pivot to the
+> two-button roulette. Kept for reference only; do not paste it.
+
 ## v1.0 build 1 (first internal upload)
 
 > Welcome to the first build of Trailer Roulette for iOS! Before tapping around, please:
