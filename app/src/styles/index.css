@@ -169,7 +169,8 @@ a { color: var(--accent); text-decoration: none; }
 /* Graceful fallback where backdrop-filter is unavailable. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass, .tr-pill, .tr-glyph, .tr-badge, .tr-rbtn-air,
-  .feat-close, .screen-header, .player-play-button { background: rgba(22, 24, 31, 0.92); }
+  .feat-close, .screen-header, .player-play-button,
+  .tr-cardinfo-chevron, .tr-hint, .tr-hint-icon { background: rgba(22, 24, 31, 0.92); }
 }
 
 /* ─────────────────────────── Focus visibility ─────────────────────────── */
@@ -472,6 +473,43 @@ a { color: var(--accent); text-decoration: none; }
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: none; }
 }
+
+/* The card is the entry point to the details sheet, so it has to look and
+   behave like a control rather than a caption: the whole block is the target
+   (never less than --tap tall), it compresses on touch like every other
+   control here, and a disclosure chevron says there is more behind it. The
+   glass is deliberately the faintest in the app — this sits over artwork the
+   trailer is the point of, so it reads as a control without becoming a
+   panel. */
+.tr-cardinfo-btn {
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%; min-height: var(--tap);
+  text-align: left; cursor: pointer;
+  padding: var(--space-3);
+  margin: calc(var(--space-3) * -1) calc(var(--space-3) * -1) 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  transition: transform 0.16s var(--press), background 0.16s var(--press),
+              border-color 0.16s var(--press);
+}
+.tr-cardinfo-btn:active {
+  transform: scale(0.985);
+  background: var(--glass-ultrathin);
+  border-color: var(--hairline);
+}
+.tr-cardinfo-text { min-width: 0; flex: 1 1 auto; }
+.tr-cardinfo-chevron {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--glass-thin);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-edge-soft);
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .tr-cardinfo h2 {
   font-family: var(--font-display);
   font-size: 26px; font-weight: 800; line-height: 1.1;
@@ -616,6 +654,115 @@ a { color: var(--accent); text-decoration: none; }
   border-radius: var(--capsule);
 }
 .tmdb-error-banner button:active { transform: scale(0.96); opacity: 0.9; }
+
+/* ─────────────────────────── First-run hint ─────────────────────────── */
+/*
+ * Shown once, on the first launch only, INSTEAD of autoplaying — see the
+ * autoplay effect in components/TrailerRoulette.jsx. Dismissing it is what
+ * starts playback, so this is the last thing between a new user and a
+ * trailer: it is a short card, not a tour.
+ *
+ * The scrim dims rather than hides. The copy points at the Theaters and Modes
+ * pills by position, so both have to stay recognisable through it — hence a
+ * 3px blur where the fun-mode sheets use 6px.
+ */
+.tr-hint-backdrop {
+  position: fixed; inset: 0; z-index: 24;
+  display: flex; align-items: center; justify-content: center;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + var(--space-5))
+    max(var(--space-5), env(safe-area-inset-right, 0px))
+    calc(env(safe-area-inset-bottom, 0px) + var(--space-5))
+    max(var(--space-5), env(safe-area-inset-left, 0px));
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: trHintFade 0.24s ease both;
+}
+@keyframes trHintFade { from { opacity: 0; } to { opacity: 1; } }
+/* Same contract as every other overlay: useOverlay holds the mount for
+   --exit-ms while this runs. It must be an ANIMATION — the entrance fills
+   `both`, and a held final frame outranks any transition. */
+.tr-hint-backdrop.is-closing {
+  animation: trHintFadeOut var(--exit-ms) var(--exit-ease) both;
+  pointer-events: none;   /* a leaving backdrop must not take a second tap */
+}
+@keyframes trHintFadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+.tr-hint {
+  width: 100%; max-width: 360px; box-sizing: border-box;
+  max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--glass-regular);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-edge);
+  color: var(--fg);
+  animation: trHintIn 0.34s var(--spring) both;
+}
+@keyframes trHintIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.tr-hint.is-closing {
+  animation: trHintOut var(--exit-ms) var(--exit-ease) both;
+  pointer-events: none;
+}
+@keyframes trHintOut {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+.tr-hint:focus { outline: none; }
+
+.tr-hint-eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+.tr-hint-title {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-display);
+  font-size: 24px; font-weight: 800; letter-spacing: -0.03em;
+}
+.tr-hint-lede {
+  margin: 0 0 var(--space-5);
+  font-size: 15px; line-height: 1.4; color: var(--fg-2);
+}
+
+.tr-hint-list {
+  margin: 0 0 var(--space-5); padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.tr-hint-list li {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  font-size: 15px; line-height: 1.35; color: var(--fg-2);
+}
+.tr-hint-list strong { color: var(--fg); font-weight: 700; }
+.tr-hint-icon {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--glass-ultrathin);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: var(--accent);
+}
+
+/* The dismissal, and the thing that actually starts playback. Full width and
+   accent-tinted: on this card there is exactly one thing to do. */
+.tr-hint-go {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 50px; min-height: 50px;
+  border-radius: var(--capsule);
+  font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: #fff;
+  background: linear-gradient(180deg, rgba(72, 174, 250, 0.92), rgba(38, 128, 210, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 24px rgba(61, 165, 244, 0.3);
+  transition: transform 0.16s var(--press), opacity 0.16s var(--press);
+}
+.tr-hint-go:active { transform: scale(0.97); opacity: 0.92; }
 
 /* ─────────────────────────── About sheet ─────────────────────────── */
 /* iOS Settings grouped-inset pattern on a dark canvas. */

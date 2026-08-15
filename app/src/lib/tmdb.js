@@ -213,9 +213,20 @@ export async function getTrailer(movieId) {
   });
 }
 
+/**
+ * Everything the "About this movie" sheet needs, folded into one request.
+ * TMDB's append_to_response returns the sub-resources inline, so opening the
+ * sheet costs a single round trip on a phone connection instead of three.
+ *
+ * Shape note: the base movie fields are untouched — appended data arrives in
+ * new sibling keys (details.credits, details.keywords), so callers that only
+ * read the plain details fields keep working unchanged.
+ */
+const DETAILS_APPEND = 'credits,keywords';
+
 export async function getMovieDetails(movieId) {
   return cached(`details:${movieId}`, async () => {
-    return call(`/movie/${movieId}`);
+    return call(`/movie/${movieId}`, { append_to_response: DETAILS_APPEND });
   });
 }
 

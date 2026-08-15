@@ -54,6 +54,14 @@ export default function PlayerWeb({
   const [apiReady, setApiReady] = useState(false);
   const [apiFailed, setApiFailed] = useState(false);
 
+  // Launch autoplay flips `isPlaying` while the IFrame player is still being
+  // constructed, so the [isPlaying] effect below runs against a null
+  // playerRef and is never re-run (the flag does not change again). onReady
+  // reads the latest intent from here and honours it — without this, the app
+  // autoplays on iOS and sits paused on web.
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
   const onPlayRef = useRef(onPlay);
   const onPauseRef = useRef(onPause);
   const onEndedRef = useRef(onEnded);
@@ -177,6 +185,13 @@ export default function PlayerWeb({
             pinDeadlineRef.current = Date.now() + PIN_WINDOW_MS;
             tryPin();
             startPoll();
+            // Catch up on a play intent that arrived before the player
+            // existed (launch autoplay). playerVars.autoplay covers the
+            // common case, but browsers refuse unmuted autoplay, so the
+            // explicit call is what actually starts the trailer.
+            if (isPlayingRef.current) {
+              try { e.target.playVideo?.(); } catch { /* noop */ }
+            }
             onPlayRef.current?.();
           },
           onStateChange: (e) => {

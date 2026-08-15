@@ -54,6 +54,7 @@ function safeParse(value) {
 export const KEYS = Object.freeze({
   WATCHLIST: 'trailer-roulette.watchlist',
   ONBOARDED: 'trailer-roulette.onboarded',
+  MUTED: 'trailer-roulette.muted', // boolean — mute preference, persisted across launches
   ERROR_LOG: 'trailer-roulette.error-log',
   // Theater Mode (v3.2.0)
   SOURCE: 'trailer-roulette.source', // null/absent = Everything (random); or { marketSlug, marketName }

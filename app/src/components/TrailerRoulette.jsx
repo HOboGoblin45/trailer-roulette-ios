@@ -3,8 +3,10 @@ import { Capacitor } from '@capacitor/core';
 import Player from './Player.jsx';
 import AboutScreen from './AboutScreen.jsx';
 import TheaterSheet from './TheaterSheet.jsx';
+import MovieSheet from './MovieSheet.jsx';
 import FunSheet from '../features/FunSheet.jsx';
 import { FEATURES } from '../features/index.js';
+import { useOverlay } from '../features/overlay.js';
 import {
   discoverMovies, discoverRandomMix, getTrailer, pickDiscoverPage,
   toTrailerCandidate, genreNames, backdropUrl, posterUrl,
@@ -29,6 +31,90 @@ const PREFETCH_LOOKAHEAD = 3;
 function decadeLabel(year) {
   if (!Number.isFinite(year) || year <= 0) return null;
   return `${Math.floor(year / 10) * 10}s`;
+}
+
+/**
+ * First-run hint — the one screen this app shows before it starts playing.
+ *
+ * Autoplay (below) means a brand new user is thrown straight into a
+ * full-screen native player and never sees the home stage, so they never
+ * learn that Theaters, Modes and AirPlay exist. On the very first launch we
+ * hold autoplay back and show this instead; dismissing it is what starts
+ * playback. Every launch after that goes straight to the trailer.
+ *
+ * Dialog semantics, focus trapping and the exit animation all come from
+ * useOverlay — same contract as FunSheet, TheaterSheet and the six modes, so
+ * this closes the way everything else in the app closes.
+ */
+function FirstRunHint({ open, onClose }) {
+  const { mounted, closing, close, dialogProps } = useOverlay({
+    open,
+    onClose,
+    label: 'How Trailer Roulette works',
+  });
+  if (!mounted) return null;
+
+  return (
+    <div className={`tr-hint-backdrop${closing ? ' is-closing' : ''}`} onClick={close}>
+      <div
+        className={`tr-hint${closing ? ' is-closing' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+        {...dialogProps}
+      >
+        <p className="tr-hint-eyebrow">First time here</p>
+        <h2 className="tr-hint-title">Trailer Roulette</h2>
+        <p className="tr-hint-lede">A random trailer channel. Nothing to set up.</p>
+
+        <ul className="tr-hint-list">
+          <li>
+            <span className="tr-hint-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M9 6v12l9-6z" fill="currentColor" />
+              </svg>
+            </span>
+            <span><strong>Play</strong> spins a fresh random trailer. Press it again for another.</span>
+          </li>
+          <li>
+            <span className="tr-hint-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+                <polygon points="12 15 17 21 7 21 12 15" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <span><strong>AirPlay</strong> throws whatever is playing to a TV.</span>
+          </li>
+          <li>
+            <span className="tr-hint-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {/* Film-strip glyph — same mark as the Theaters pill. */}
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="7" y1="4" x2="7" y2="20" />
+                <line x1="17" y1="4" x2="17" y2="20" />
+                <line x1="3" y1="9" x2="7" y2="9" /><line x1="3" y1="15" x2="7" y2="15" />
+                <line x1="17" y1="9" x2="21" y2="9" /><line x1="17" y1="15" x2="21" y2="15" />
+              </svg>
+            </span>
+            <span>
+              <strong>Theaters</strong>, top left, tunes the channel to one real cinema and
+              what it is showing this month.
+            </span>
+          </li>
+          <li>
+            <span className="tr-hint-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l2.1 5.5L20 9.3l-4.3 3.7L17 19l-5-3-5 3 1.3-6L4 9.3l5.9-.8z" />
+              </svg>
+            </span>
+            <span><strong>Modes</strong>, top right, holds the other ways to watch.</span>
+          </li>
+        </ul>
+
+        <button type="button" className="tr-hint-go" onClick={close}>
+          Start watching
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -61,6 +147,16 @@ export default function TrailerRoulette() {
   const [activeFeature, setActiveFeature] = useState(null);
   const [source, setSource] = useState(null); // null = Everything; { marketSlug, marketName } = Theater Mode
   const [theaterOpen, setTheaterOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [muted, setMuted] = useState(false); // restored from storage on boot
+  const [hintOpen, setHintOpen] = useState(false); // first launch only
+  // Autoplay is a two-part gate: `armed` says the launch-time restores are
+  // done and the hint (if any) is out of the way; `autoplayedRef` is the latch
+  // that makes it a once-per-launch event. State cannot carry the latch — any
+  // later render would re-run the effect and re-open a player the user may
+  // have just dismissed.
+  const [autoplayArmed, setAutoplayArmed] = useState(false);
+  const autoplayedRef = useRef(false);
 
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
@@ -138,7 +234,9 @@ export default function TrailerRoulette() {
     loadQueue({ append: true }).finally(() => { toppingRef.current = false; });
   }, [queue.length, current, loadQueue]);
 
-  // Boot: restore the saved source (theater or Everything), then load.
+  // Boot: restore the saved source (theater or Everything), start the queue,
+  // then restore the remembered preferences and decide how this launch opens
+  // — straight into a trailer, or on the one-time hint.
   useEffect(() => {
     (async () => {
       try {
@@ -149,9 +247,77 @@ export default function TrailerRoulette() {
         }
       } catch { /* default to Everything */ }
       loadQueue();
+
+      // Sound is the user's last choice, not ours. Default unmuted: a silent
+      // trailer is not a trailer. Restored BEFORE autoplay is armed so the
+      // first openTrailer already carries the right value rather than
+      // starting loud and correcting itself a frame later.
+      try {
+        setMuted((await storage.get(storage.KEYS.MUTED)) === true);
+      } catch { /* default unmuted */ }
+
+      // First launch shows the hint and lets its dismissal start playback;
+      // every launch after that arms autoplay immediately. A failed read
+      // counts as "already seen" — skipping the hint once is far better than
+      // showing it on every launch of a device where persistence is broken.
+      let seenHint = true;
+      try {
+        seenHint = (await storage.get(storage.KEYS.ONBOARDED)) === true;
+      } catch { seenHint = true; }
+      if (seenHint) setAutoplayArmed(true);
+      else setHintOpen(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The hint is dismissed: remember that, and hand off to autoplay. This is
+  // the only path that arms autoplay on a first launch.
+  const onDismissHint = useCallback(() => {
+    setHintOpen(false);
+    setAutoplayArmed(true);
+    storage.set(storage.KEYS.ONBOARDED, true).catch(() => { /* best-effort */ });
+  }, []);
+
+  // Burn the autoplay latch without firing it. Called from every path where
+  // the user has already taken control of playback before the first key
+  // arrived (tapping Play, opening a fun mode, switching channel): from that
+  // point on the launch has been answered by a human, and autoplay stepping
+  // in later would be the app fighting them.
+  const cancelAutoplay = useCallback(() => { autoplayedRef.current = true; }, []);
+
+  // AUTOPLAY — launch only. The app opens full-screen and plays by itself, so
+  // there is no tap between launching and watching.
+  //
+  // Deliberately NOT symmetric with the background/foreground rule below: on
+  // returning from the background we stay paused, because the native session
+  // is over and resuming would make the Play button lie and skip a trailer
+  // the user never saw. Autoplay answers a different question ("what should a
+  // cold launch do?") and must not be "fixed" into a general auto-resume.
+  //
+  // Three properties this has to hold, in order:
+  //   - it waits for a REAL youtubeKey. The queue loads first and keys are
+  //     prefetched after, so `current` exists for a while carrying no key at
+  //     all — firing on mount would open an empty player.
+  //   - it fires exactly once per launch. `autoplayedRef` latches
+  //     synchronously, before any state update, so a re-render (or React's
+  //     StrictMode double-invoke) re-enters and bails. Nothing clears it.
+  //   - it can never re-open a player the user closed. The latch is set
+  //     before the player can exist, so by the time any dismissal is possible
+  //     this effect is already spent; cancelAutoplay() closes the remaining
+  //     window where the user acts before the first key lands.
+  //
+  // It routes through playSignal — the one signal every Play path already
+  // uses — rather than adding a second way in, so it cannot collide with the
+  // continuous-playback auto-reopen in Player.ios.jsx (which is gated on its
+  // own sessionRef and stays untouched).
+  useEffect(() => {
+    if (!autoplayArmed) return;
+    if (autoplayedRef.current) return;
+    if (!current?.youtubeKey) return;
+    autoplayedRef.current = true;
+    setIsPlaying(true);
+    setPlaySignal((n) => n + 1);
+  }, [autoplayArmed, current?.youtubeKey]);
 
   // Switch source (theater picked, or back to Everything) and rebuild the
   // queue from scratch. Persisted so the app reopens on the same channel.
@@ -169,11 +335,12 @@ export default function TrailerRoulette() {
       } catch { /* persistence is best-effort */ }
     })();
     setIsPlaying(false); // ends any native session; Play starts the new channel
+    cancelAutoplay();    // this channel was chosen, not launched into
     setCurrent(null);
     setQueue([]);
     prefetchedRef.current = new Set();
     loadQueue();
-  }, [loadQueue]);
+  }, [loadQueue, cancelAutoplay]);
 
   const handleRetry = useCallback(async () => {
     setRetrying(true);
@@ -309,15 +476,41 @@ export default function TrailerRoulette() {
   // trailers keep auto-advancing on their own.
   const onSpin = useCallback(() => {
     haptics.medium();
+    cancelAutoplay(); // the user started it; autoplay has nothing left to do
     if (isPlaying) advance();
     setIsPlaying(true);
     setPlaySignal((n) => n + 1);
-  }, [isPlaying, advance]);
+  }, [isPlaying, advance, cancelAutoplay]);
 
   const onAirPlay = useCallback(async () => {
     haptics.medium();
     try { await airplay.presentRoutePicker(); } catch { /* noop */ }
   }, []);
+
+  // The user hit the mute toggle inside the native player. Mirror it into
+  // state (so the next openTrailer opens the same way) and remember it for
+  // the next launch.
+  const onMuteChanged = useCallback((next) => {
+    const value = !!next;
+    setMuted(value);
+    storage.set(storage.KEYS.MUTED, value).catch(() => { /* best-effort */ });
+  }, []);
+
+  // The now-playing card opens the details sheet. Autoplay lands the user in
+  // the player first, so the route here is: swipe the player down, tap the
+  // card on the stage.
+  const onOpenDetails = useCallback(() => {
+    haptics.light();
+    setSheetOpen(true);
+  }, []);
+
+  // role="button" carries no implicit keyboard activation — Enter and Space
+  // have to be wired by hand, or the card is mouse/touch only.
+  const onCardKeyDown = useCallback((e) => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    e.preventDefault();
+    onOpenDetails();
+  }, [onOpenDetails]);
 
   const currentArt = current ? (backdropUrl(current.backdrop_path) || posterUrl(current.poster_path)) : null;
   const next = queue[1];
@@ -358,6 +551,7 @@ export default function TrailerRoulette() {
             trailer={current}
             nextTrailer={queue[1]}
             isPlaying={isPlaying}
+            muted={muted}
             playSignal={playSignal}
             showPlayButton={false}
             onPlay={() => setIsPlaying(true)}
@@ -365,6 +559,7 @@ export default function TrailerRoulette() {
             onEnded={onTrailerEnded}
             onAdvanceInPlace={onAdvanceInPlace}
             onUnplayable={onUnplayable}
+            onMuteChanged={onMuteChanged}
             onDurationKnown={onTrailerDurationKnown}
           />
         </div>
@@ -406,20 +601,41 @@ export default function TrailerRoulette() {
       </div>
 
       {/* Minimal now-playing: title, year, a genre + decade badge — plus the
-          live "Now Showing" badge when the channel is tuned to a theater. */}
+          live "Now Showing" badge when the channel is tuned to a theater.
+          The whole block is the entry point to the details sheet, so it is a
+          real control: button role, keyboard activation, a 44pt floor and a
+          disclosure chevron so it does not read as inert caption text. It
+          stays a div wearing role="button" rather than a <button> because it
+          contains an <h2> — heading content is not valid inside a button. */}
       {current && (
         <div className="tr-cardinfo" key={current.id}>
-          <h2>{current.title}{current.year ? <span className="tr-year"> {current.year}</span> : null}</h2>
-          <div className="tr-badges">
-            {source ? (
-              <span className="tr-badge tr-badge-live">
-                Now Showing · {source.marketName} · {monthLabel()}
-              </span>
-            ) : null}
-            {genreNames(current.genre_ids).slice(0, 2).map((g) => (
-              <span className="tr-badge" key={g}>{g}</span>
-            ))}
-            {era ? <span className="tr-badge tr-badge-era">{era}</span> : null}
+          <div
+            className="tr-cardinfo-btn"
+            role="button"
+            tabIndex={0}
+            aria-label={`About ${current.title}`}
+            onClick={onOpenDetails}
+            onKeyDown={onCardKeyDown}
+          >
+            <div className="tr-cardinfo-text">
+              <h2>{current.title}{current.year ? <span className="tr-year"> {current.year}</span> : null}</h2>
+              <div className="tr-badges">
+                {source ? (
+                  <span className="tr-badge tr-badge-live">
+                    Now Showing · {source.marketName} · {monthLabel()}
+                  </span>
+                ) : null}
+                {genreNames(current.genre_ids).slice(0, 2).map((g) => (
+                  <span className="tr-badge" key={g}>{g}</span>
+                ))}
+                {era ? <span className="tr-badge tr-badge-era">{era}</span> : null}
+              </div>
+            </div>
+            <span className="tr-cardinfo-chevron" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 5 16 12 9 19" />
+              </svg>
+            </span>
           </div>
         </div>
       )}
@@ -468,13 +684,33 @@ export default function TrailerRoulette() {
         onClose={() => setTheaterOpen(false)}
       />
 
+      <MovieSheet
+        open={sheetOpen}
+        movie={current}
+        source={source}
+        onClose={() => setSheetOpen(false)}
+      />
+
       <FunSheet
         open={menuOpen}
         features={FEATURES}
-        onPick={(f) => { haptics.medium(); setMenuOpen(false); setIsPlaying(false); setActiveFeature(f); }}
+        onPick={(f) => {
+          haptics.medium();
+          setMenuOpen(false);
+          setIsPlaying(false);
+          // A mode unmounts the roulette's Player, so a playSignal bump fired
+          // while it is open would be spent on a component that is not there
+          // and re-applied on mount when the mode closes. Autoplay must not
+          // ambush the user on their way back to the stage.
+          cancelAutoplay();
+          setActiveFeature(f);
+        }}
         onClose={() => setMenuOpen(false)}
       />
       {ActiveComp && <ActiveComp onClose={() => setActiveFeature(null)} />}
+
+      {/* Last in the tree so it sits above the stage chrome it points at. */}
+      <FirstRunHint open={hintOpen} onClose={onDismissHint} />
     </div>
   );
 }

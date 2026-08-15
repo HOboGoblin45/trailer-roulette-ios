@@ -4,6 +4,68 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.3.0] — 2026-08-14
+
+The app now starts playing on its own, and a trailer you like is no longer a
+dead end. Deliberately a zero-Swift release: everything here is JavaScript, so
+nothing shipped that could not be verified before it left the machine.
+
+### Added
+- **Autoplay on launch.** The app opens straight into the full-screen player
+  once the first trailer has a real YouTube key. No tap between launching and
+  watching.
+  Three properties this had to hold, and does: it waits for an actual key (the
+  queue loads before keys are prefetched, so `current` exists for a while
+  carrying nothing); it fires exactly once per launch, via a ref that latches
+  synchronously before any state update, so a re-render or React StrictMode's
+  double-invoke cannot repeat it; and it can never reopen a player the user
+  deliberately closed, because the latch is set before a player can exist and
+  `cancelAutoplay()` covers the remaining window where someone taps Play before
+  the first key lands. It routes through the existing `playSignal` rather than
+  adding a second way in, so it cannot collide with the continuous-playback
+  reopen path.
+  Returning from the background is deliberately NOT symmetric: the app stays
+  paused, because the native session is over and auto-resuming would make the
+  Play button lie and skip a trailer that was never seen.
+- **The mute setting is remembered** across launches, so autoplay never
+  surprises you the same way twice. Defaults to unmuted; a silent trailer is
+  not a trailer.
+- **About this movie** — a new sheet off the now-playing card, built around
+  facts drawn strictly from real TMDB fields: director and writers, top-billed
+  cast, adaptation source, collection, runtime, rating with a vote floor so a
+  10.0 from three votes cannot show up, original language and title, box office
+  against budget, credits-scene stingers, tagline and themes.
+  Nothing here is generated. Every fact traces to a field; when a field is
+  absent the app says nothing rather than guessing. There is a test asserting
+  the output can never contain reunion claims, "filmed in" language, or a
+  computed profit figure, because none of those are supported by the data.
+- **Save and Share.** The watchlist storage key had existed unused since v2.x
+  and `@capacitor/share` had been a dependency that nothing imported. Both are
+  now real.
+- **Where to watch** — streaming, rent and buy availability, with the JustWatch
+  attribution TMDB requires for that data.
+- **Get tickets** on Theater Mode, where a real showing is known to exist. The
+  affiliate id is a single exported constant, so switching from a plain search
+  link to an earning one is a one-line change once the programme is signed up
+  for.
+- **First-run hint.** Autoplay means a new user never sees the home screen, so
+  the first launch shows a short overlay naming the two buttons and pointing at
+  the Theaters and Modes pills; dismissing it starts playback. Every launch
+  after that goes straight to the trailer.
+
+### Changed
+- The now-playing card is a real control rather than inert text: button role,
+  44pt target, accessible name, and a visible disclosure affordance.
+- `getMovieDetails` fetches credits and keywords in the same request instead of
+  three round trips. Signature and cache behaviour unchanged.
+
+### Testing
+164 vitest (69 new, covering the facts builder and the watchlist against empty
+payloads, zero budgets, low vote counts, missing crew, corrupt stored JSON,
+dedupe and the size cap), eslint clean, `vite build` green. Test fixtures use an
+invented film so no assertion can accidentally state something false about a
+real one. `TrailerPlayer.swift` is byte-identical to v3.2.2.
+
 ## [3.2.2] — 2026-08-14
 
 A UI audit of the whole app, and a pass on making the native player feel like a
