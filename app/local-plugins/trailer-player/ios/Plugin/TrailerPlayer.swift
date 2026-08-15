@@ -164,6 +164,11 @@ public class TrailerPlayer: CAPPlugin {
         // stage. Strictly optional — a missing/empty/unusable value leaves the
         // black stage we had before, so an un-updated JS caller changes nothing.
         let posterUrl = call.getString("posterUrl")
+        // v3.4.0: the queue, so YouTube's own player can sequence it. See
+        // applyPlaylist(). Sanitised the same way as any other id; anything
+        // malformed is dropped rather than poisoning the list.
+        let playlist = (call.getArray("playlist") as? [String] ?? []).compactMap { self.sanitizedId($0) }
+        let playlistTitles = call.getArray("playlistTitles") as? [String] ?? []
 
         DispatchQueue.main.async {
             guard let presenter = self.resolvePresenter() else {
@@ -243,6 +248,7 @@ public class TrailerPlayer: CAPPlugin {
     private func presentTrailer(videoId: String, title: String, muted: Bool,
                                 nextId: String?, nextTitle: String,
                                 posterUrl: String?,
+                                playlist: [String] = [], playlistTitles: [String] = [],
                                 from presenter: UIViewController, call: CAPPluginCall) {
         let vc = TrailerPlayerViewController(
             videoId: videoId,
@@ -265,6 +271,7 @@ public class TrailerPlayer: CAPPlugin {
             }
         )
         if let nextId = nextId { vc.setNext(videoId: nextId, title: nextTitle) }
+        vc.setPlaylist(playlist, titles: playlistTitles)
         // v3.2.2: .overFullScreen, not .fullScreen. UIKit tears the presenting
         // view controller's view out of the hierarchy for a .fullScreen
         // presentation, so the interactive swipe-down (A2) dragged the player
@@ -435,6 +442,24 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     private var hbContentConfirmed = false   // proxy-side confirmation via 'hb'
     private var progressAccum: Double = 0    // native-side forward-progress accumulation
     private var epochLastT: Double?
+
+    // v3.4.0 — PLAYLIST MODE. YouTube's own player can sequence a list of video
+    // ids and move between them itself. Every version up to 3.3.2 instead
+    // detected the end of each trailer and loaded the next one by hand, which
+    // meant reimplementing, against signals YouTube deliberately keeps vague,
+    // the one thing its player already does natively. Handing it the queue
+    // removes the entire failure class: no end screen, no replay button, no
+    // closing and reopening the modal, no cold page load between trailers.
+    private var playlistIds: [String] = []
+    private var playlistTitles: [String] = []
+    private var playlistIndex = 0
+    private var playlistActive = false
+    /// Armed at a confirmed end while the playlist is driving. If YouTube moves
+    /// on by itself first, playback cancels it. If it fires, the playlist did
+    /// not take and we fall back to the hand-rolled advance, so the worst case
+    /// is a few seconds late rather than the permanent stall this replaces.
+    private var playlistWatchTimer: Timer?
+    private static let playlistHandoffSeconds: TimeInterval = 4.0
     /// When playback last demonstrably advanced. The hard cap must not shoot
     /// down a trailer that is visibly playing just because the content player
     /// never announced PLAYING.
@@ -1057,9 +1082,14 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     /// chrome non-interactive — and in the swipe-down gesture, which works
     /// whether or not the chrome is visible.
     private func chromeMayAutoHide() -> Bool {
-        if didFinish { return false }
-        if loadingIndicator?.isAnimating == true { return false }
-        return true
+        // v3.4.0: OFF. Hiding the chrome was a v3.2.2 idea that looked right on
+        // paper and was wrong on a device: at the end of a trailer the app's
+        // Done, Skip and mute had all faded out, so the only thing on screen
+        // was YouTube's end screen and its replay button. The app handed the
+        // display to YouTube at exactly the moment it needed to be in charge.
+        // Controls stay up. Everything that drives it is left intact so this is
+        // a one-line change to revisit, but not before it can be seen running.
+        return false
     }
 
     private func showChrome(restartIdleTimer: Bool = true) {
@@ -1305,6 +1335,68 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
         }
     }
 
+    func setPlaylist(_ ids: [String], titles: [String]) {
+        playlistIds = ids
+        playlistTitles = titles
+        playlistIndex = 0
+    }
+
+    /// Hand the queue to YouTube. Injected straight into the existing iframe,
+    /// which already carries enablejsapi=1 — so this needs no change to the
+    /// proxy page and works against the version deployed today.
+    private func applyPlaylist() {
+        guard !playlistActive, playlistIds.count > 1 else { return }
+        let quoted = playlistIds.map { "'\($0)'" }.joined(separator: ",")
+        let js = """
+        (function(){try{var f=document.getElementById('yt');
+        if(!f||!f.contentWindow)return 'no';
+        f.contentWindow.postMessage(JSON.stringify({event:'command',func:'loadPlaylist',
+          args:[[\(quoted)],0,0]}),'https://www.youtube-nocookie.com');
+        return 'ok';}catch(e){return 'err';}})()
+        """
+        webView?.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self = self else { return }
+            if (result as? String) == "ok" {
+                self.playlistActive = true
+                print("[TrailerPlayer] playlist handed to YouTube: \(self.playlistIds.count) videos")
+            }
+        }
+    }
+
+    private func cancelPlaylistWatch() {
+        playlistWatchTimer?.invalidate()
+        playlistWatchTimer = nil
+    }
+
+    /// YouTube moved to the next item on its own. Sync our chrome and tell JS
+    /// so its queue, metadata panel and prefetch keep pace with what is on
+    /// screen. Playback is not touched — it never stopped.
+    private func playlistDidAdvance() {
+        cancelPlaylistWatch()
+        guard playlistActive else { return }
+        let played = playlistIndex < playlistIds.count ? playlistIds[playlistIndex] : videoId
+        playlistIndex += 1
+        guard playlistIndex < playlistIds.count else {
+            // Batch exhausted; let the normal path take over from here.
+            playlistActive = false
+            return
+        }
+        videoId = playlistIds[playlistIndex]
+        if playlistIndex < playlistTitles.count {
+            videoTitle = playlistTitles[playlistIndex]
+            let newTitle = videoTitle.isEmpty ? "Trailer" : videoTitle
+            if let label = titleLabel {
+                UIView.transition(with: label, duration: 0.28, options: [.transitionCrossDissolve],
+                                  animations: { label.text = newTitle }, completion: nil)
+            }
+        }
+        resetContentProgress()
+        resetProgressBar()
+        fireHaptic(softHaptic)
+        onEvent("trailerEvent", ["event": "advanced", "cause": "ended",
+                                 "from": played, "youtubeKey": videoId])
+    }
+
     private func resetContentProgress() {
         lastContentTime = 0
         lastContentDuration = 0
@@ -1447,6 +1539,25 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     /// else finish so JS advances + reopens (the proven fallback path).
     private func performConfirmedEnd() {
         cancelEndConfirm()
+        // Playlist mode: YouTube owns the transition. Do NOT close the modal or
+        // swap the video by hand - that would fight the player and skip an
+        // item. Give it playlistHandoffSeconds to move on; if it does, playback
+        // resuming cancels this timer and playlistDidAdvance() syncs the
+        // chrome. If it does not, the playlist never took and we fall back to
+        // the old behaviour, so this can be late but cannot dead-end.
+        if playlistActive {
+            cancelPlaylistWatch()
+            playlistWatchTimer = Timer.scheduledTimer(
+                withTimeInterval: Self.playlistHandoffSeconds, repeats: false
+            ) { [weak self] _ in
+                guard let self = self, !self.didFinish else { return }
+                self.playlistWatchTimer = nil
+                self.playlistActive = false
+                print("[TrailerPlayer] playlist handoff timed out; falling back")
+                self.performConfirmedEnd()
+            }
+            return
+        }
         if nextVideoId != nil {
             advanceInPlace(reason: "advanced")
         } else {
@@ -1762,6 +1873,7 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
             // The YT player itself has spoken (watchdog rule 2).
             sawYtSignal = true
             print("[TrailerPlayer] YT.Player onReady")
+            applyPlaylist()
 
         case "hb":
             // v3.2.0 proxy heartbeat: 1s liveness + progress + the proxy's own
@@ -1803,6 +1915,9 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
                 // PLAYING or BUFFERING: playback (re)started, so any pending
                 // "ended" was a pre-roll ad boundary — cancel it.
                 cancelEndConfirm()
+                // ...and if we were waiting to see whether YouTube would move
+                // to the next playlist item, this is it doing exactly that.
+                if playlistActive && playlistWatchTimer != nil { playlistDidAdvance() }
                 if state == 1 {
                     // Real playback — hide any loading spinner (a gapless
                     // trLoad swap fires no navigation event) and tell JS.

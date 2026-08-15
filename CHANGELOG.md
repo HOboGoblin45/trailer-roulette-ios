@@ -4,6 +4,37 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.4.0] — 2026-08-14
+
+Stops reimplementing something YouTube already does.
+
+### Changed
+- **YouTube's player now sequences the queue itself.** Every version up to 3.3.2
+  detected the end of each trailer and loaded the next one by hand. That meant
+  rebuilding, on top of signals YouTube deliberately keeps ambiguous, the one
+  thing its player does natively — and it is why six releases of end-detection
+  work kept relocating the failure instead of removing it. The screenshot that
+  finally settled it showed YouTube's own end screen and replay button, with
+  the app waiting for an event to tell it what had plainly already happened.
+  The queue is now handed to the IFrame player via `loadPlaylist`, and YouTube
+  moves between trailers on its own: no end screen, no replay button, no
+  closing and reopening the modal, no cold page load between videos.
+  It is injected straight into the existing iframe, which already carries
+  `enablejsapi=1`, so it needs no change to the deployed proxy.
+  Ends are still detected, but only to keep the app's chrome and queue in step
+  with what YouTube is showing, and as the fallback when a batch runs out. If
+  the handoff does not take, a 4s timer restores the old advance path, so this
+  can be late but cannot dead-end.
+- Prefetch reaches 8 trailers ahead rather than 3. Every key ready when the
+  player opens is one more trailer that plays with no gap.
+
+### Removed
+- **The auto-hiding player chrome.** A 3.2.2 idea that read well and was wrong
+  on a device: by the end of a trailer the app's Done, Skip and mute had all
+  faded out, so the only thing on screen was YouTube's end screen. The app was
+  handing the display to YouTube at exactly the moment it needed to be in
+  charge. Controls stay up.
+
 ## [3.3.2] — 2026-08-14
 
 Does the one thing that was actually asked for: press Play once, and it keeps

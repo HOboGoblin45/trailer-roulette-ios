@@ -25,7 +25,10 @@ const DEFAULT_CYCLE_SECONDS = 90;
 // headroom for ads or it would cut the trailer short (v3.1.0 cut trailers at
 // ad-length seconds when the ad's duration poisoned this timer).
 const AD_ALLOWANCE_SECONDS = 45;
-const PREFETCH_LOOKAHEAD = 3;
+// v3.4.0: deeper. YouTube's player is handed this queue and sequences it
+// itself, so every key ready at open time is one more trailer that plays with
+// no gap. TMDB responses are cached, so the extra reach is nearly free.
+const PREFETCH_LOOKAHEAD = 8;
 
 // 1987 → "1980s". A small, fun reminder that the feed spans every decade.
 function decadeLabel(year) {
@@ -500,6 +503,7 @@ export default function TrailerRoulette() {
           <Player
             trailer={current}
             nextTrailer={queue[1]}
+            playlist={queue}
             isPlaying={isPlaying}
             muted={muted}
             playSignal={playSignal}

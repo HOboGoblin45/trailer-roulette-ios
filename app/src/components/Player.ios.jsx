@@ -44,6 +44,7 @@ function stageArt(movie) {
 export default function PlayerIOS({
   trailer,
   nextTrailer,
+  playlist = [],
   isPlaying,
   muted = false,
   playSignal,
@@ -195,6 +196,26 @@ export default function PlayerIOS({
     return () => clearInterval(t);
   }, []);
 
+  // The queue as YouTube will receive it: current trailer first, then every
+  // upcoming one whose key is already known, de-duplicated and capped.
+  const playablePlaylist = (() => {
+    const seen = new Set();
+    const out = [];
+    const push = (m) => {
+      if (!m?.youtubeKey || seen.has(m.youtubeKey)) return;
+      seen.add(m.youtubeKey);
+      out.push({ key: m.youtubeKey, title: m.title || '' });
+    };
+    push(trailer);
+    for (const m of playlist) { if (out.length >= 25) break; push(m); }
+    return out;
+  })();
+  const playlistKeys = playablePlaylist.map((m) => m.key);
+  const playlistTitlesFor = (keys) => {
+    const byKey = new Map(playablePlaylist.map((m) => [m.key, m.title]));
+    return keys.map((k) => byKey.get(k) || '');
+  };
+
   const openTrailer = async () => {
     if (!trailer?.youtubeKey || openingRef.current) return;
     haptics.medium();
@@ -215,6 +236,13 @@ export default function PlayerIOS({
         // proxy page loads. Empty string is a silent no-op natively, so a
         // movie with no art behaves exactly as before.
         posterUrl: stageArt(trailer),
+        // v3.4.0: hand YouTube the queue so its own player sequences it. Only
+        // entries that already have a key can go in - prefetch fills them a few
+        // ahead - and the current trailer must lead. When the batch runs out
+        // the old end-detection path takes over and reopens with a fresh one,
+        // so this is seamless within a batch rather than forever.
+        playlist: playlistKeys,
+        playlistTitles: playlistTitlesFor(playlistKeys),
       });
       openingRef.current = false;
       onPause?.();
