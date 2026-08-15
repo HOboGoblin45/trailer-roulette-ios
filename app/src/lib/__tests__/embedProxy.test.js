@@ -253,15 +253,26 @@ describe('embed proxy — end detection', () => {
     expect(h.endsForwarded()).toHaveLength(1);
   });
 
-  it('advances at a genuine end even with no pin, after the confirm window', async () => {
+  // Against the v3.1.0 proxy still deployed there is no pin, and v3.2.1 made
+  // that mean "never fast-path". Every trailer then sat five seconds on
+  // YouTube's replay screen at its end. A clip longer than any pre-roll ad is
+  // the trailer, so it advances at once.
+  it('advances immediately at a genuine end with no pin, when the clip outruns any ad', async () => {
     const h = await boot();
     h.state(1);
     h.play(0, 140, 142, 1); // no initialDelivery -> no pin
     h.info(141.6, 142);
     h.state(0);
-    expect(h.endsForwarded()).toHaveLength(0); // no instant advance without a pin
-    h.advance(6000);
     expect(h.endsForwarded()).toHaveLength(1);
+  });
+
+  it('still refuses to fast-path an unpinned clip short enough to be an ad', async () => {
+    const h = await boot();
+    h.state(1);
+    h.play(0, 44, 45, 1); // 45s: could be an unskippable ad
+    h.info(44.8, 45);
+    h.state(0);
+    expect(h.endsForwarded()).toHaveLength(0);
   });
 
   it('advances a short pinned teaser at its real end', async () => {

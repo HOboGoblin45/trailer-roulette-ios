@@ -445,6 +445,12 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     private static let endEpsilonSeconds: Double = 1.5
     private static let pinEpsilonSeconds: Double = 2.5
     private static let confirmProgressSeconds: Double = 3.0
+    /// With no pinned content duration (v3.1.0 proxy still deployed), a clip
+    /// whose own duration exceeds this is treated as the trailer rather than an
+    /// ad. Sits above YouTube's pre-roll inventory (6s bumpers to 30s spots;
+    /// longer skippable ones are skipped at 5s) and below essentially every
+    /// real trailer. Only consulted when pinnedDuration is 0.
+    private static let unpinnedContentSeconds: Double = 65
     /// A sample must advance by more than this to count as playback. Smaller
     /// deltas are the player re-reporting where it already is — exactly what
     /// it does once a video has genuinely ENDED.
@@ -1361,17 +1367,30 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     /// or >= 3s of natively-accumulated forward progress on a pin-matching
     /// clip.
     ///
-    /// v3.2.0 also accepted an unpinned clip past minContentSeconds, meaning a
-    /// long unskippable ad confirmed as content. That both shortened the
-    /// confirm window below a typical ad-pod gap and unlocked the fast-path at
-    /// the ad's own end — two ways to cut a trailer short. Unpinned (which now
-    /// only happens against an un-redeployed proxy) we stay on the long window
-    /// and never fast-path: a real end is reported late rather than wrongly.
+    /// v3.2.1 removed the unpinned path entirely, reasoning that a long
+    /// unskippable ad passes any "looks long enough" test. Right about ads,
+    /// wrong about deployment: the pin only exists once the v3.2.1+ proxy is
+    /// live, and against the v3.1.0 proxy that is still deployed this was
+    /// permanently false. Every trailer then took the full 5s pre-content
+    /// window at its end — and YouTube fills those five seconds with its own
+    /// replay button, which is what users ended up tapping. Refusing to decide
+    /// is not the safe choice when the cost of not deciding is the app visibly
+    /// stalling on every trailer.
+    ///
+    /// So the unpinned path is back, with a far higher bar than v3.2.0's:
+    /// unpinnedContentSeconds, not minContentSeconds. A clip whose own duration
+    /// runs past a minute is not pre-roll — YouTube's pre-roll inventory is 6s
+    /// bumpers through 30s spots, and the long skippable ones get skipped at
+    /// 5s. The 45s ad that v3.2.1 was protecting against still fails this test
+    /// and still gets the conservative window.
     private func contentConfirmedNow() -> Bool {
         if hbContentConfirmed { return true }
         if pinnedDuration > 0,
            progressAccum >= Self.confirmProgressSeconds,
            pinOk(lastContentDuration) { return true }
+        if pinnedDuration <= 0,
+           progressAccum >= Self.confirmProgressSeconds,
+           lastContentDuration >= Self.unpinnedContentSeconds { return true }
         return false
     }
 
@@ -1389,15 +1408,25 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
     /// a real end resumes nothing.
     private func handleEndCandidate() {
         if didFinish { return }
-        // Fast-path only for the clip we hold content metadata for. Without a
-        // pin we cannot tell a finished trailer from a finished 45s ad, and
-        // the fast-path only saves the confirm window — so we wait instead.
+        // Fast-path when we hold content metadata and this clip matches it.
         if pinnedDuration > 0,
            pinOk(lastContentDuration),
            lastContentDuration > 0,
            lastContentTime >= lastContentDuration - Self.endEpsilonSeconds,
            lastContentTime >= Self.minContentSeconds,
            contentConfirmedNow() {
+            performConfirmedEnd()
+            return
+        }
+        // Unpinned fallback, for as long as the deployed proxy predates the
+        // 'meta' pin. Playback reached the end of a clip that ran longer than
+        // any pre-roll ad does, so this is the trailer finishing. Without this
+        // the app stalls five seconds on YouTube's replay screen at the end of
+        // every single trailer, which is a far worse and far more frequent
+        // failure than the rare long-ad case the pin exists to catch.
+        if pinnedDuration <= 0,
+           lastContentDuration >= Self.unpinnedContentSeconds,
+           lastContentTime >= lastContentDuration - Self.endEpsilonSeconds {
             performConfirmedEnd()
             return
         }

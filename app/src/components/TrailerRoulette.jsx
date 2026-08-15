@@ -19,6 +19,8 @@ import * as haptics from '../lib/haptics.js';
 
 const MAX_TRAILER_SECONDS = 180;
 const DEFAULT_CYCLE_SECONDS = 90;
+// How long the one-time first-run hint may block autoplay before it gives up.
+const HINT_MAX_MS = 15000;
 // The web cycle timer is a BACKSTOP, not the advance mechanism — the ad-aware
 // end detector advances at the real end. The countdown ticks through pre-roll
 // ad time too (content hasn't started yet), so the backstop must leave
@@ -270,13 +272,25 @@ export default function TrailerRoulette() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The hint is dismissed: remember that, and hand off to autoplay. This is
-  // the only path that arms autoplay on a first launch.
+  // The hint is dismissed: remember that, and hand off to autoplay.
   const onDismissHint = useCallback(() => {
     setHintOpen(false);
     setAutoplayArmed(true);
     storage.set(storage.KEYS.ONBOARDED, true).catch(() => { /* best-effort */ });
   }, []);
+
+  // Safety net. Dismissing the hint was the ONLY path that armed autoplay on a
+  // first launch, which made a one-time overlay a single point of failure for
+  // the app's headline behaviour: if it ever failed to render its close
+  // control, or the tap did not land, the app would sit there forever and the
+  // trailer would never start. A hint that goes wrong should degrade to "no
+  // hint", never to "no playback". Anyone who wanted to read it has had long
+  // enough by now.
+  useEffect(() => {
+    if (!hintOpen) return undefined;
+    const t = setTimeout(() => { onDismissHint(); }, HINT_MAX_MS);
+    return () => clearTimeout(t);
+  }, [hintOpen, onDismissHint]);
 
   // Burn the autoplay latch without firing it. Called from every path where
   // the user has already taken control of playback before the first key

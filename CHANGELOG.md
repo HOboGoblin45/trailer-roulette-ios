@@ -4,6 +4,42 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.3.1] — 2026-08-14
+
+Fixes the bug 3.2.1 introduced: trailers stopped advancing at all.
+
+### Fixed
+- **Every trailer stalled on YouTube's replay screen at its end.** 3.2.1 made
+  the native player require a pinned content duration before it would confirm a
+  trailer or fast-path its end. That pin only arrives from the 3.2.1+ proxy —
+  and the deployed proxy is still 3.1.0, so on real devices the answer was
+  permanently "not confirmed". Every trailer therefore took the full 5s
+  pre-content window at its end, and YouTube fills those five seconds with its
+  own replay button, which is what users were tapping. The app looked like it
+  needed a manual press for every single video.
+  This is the same mistake 3.2.1 was written to fix, made in the other
+  direction: shipping logic that depends on a deploy that has not happened.
+  Refusing to decide is not the safe option when the cost of not deciding is
+  the app visibly stalling on every trailer.
+  There is now an unpinned fallback in all three mirrors, with a much higher
+  bar than the one 3.2.1 removed: 65 seconds rather than 32. A clip whose own
+  duration runs past a minute is not pre-roll — YouTube's inventory is 6s
+  bumpers through 30s spots, and the long skippable ones get skipped at 5s. The
+  45s ad that 3.2.1 was protecting against still fails this test and still gets
+  the conservative window. Both halves are asserted by tests, and the native
+  half was compiled and run.
+- **The first-run hint could permanently block autoplay.** Dismissing it was
+  the only path that armed autoplay on a first launch, so a hint that failed to
+  render its close control would leave the app sitting there forever. It now
+  gives up after 15 seconds. A hint that goes wrong should degrade to "no
+  hint", never to "no playback".
+
+### Note on the proxy
+With this release the Vercel proxy redeploy is an enhancement rather than a
+requirement — the app is correct against the 3.1.0 proxy that is live today.
+Deploying still improves the liveness watchdog and lets the pin do its more
+precise job.
+
 ## [3.3.0] — 2026-08-14
 
 The app now starts playing on its own, and a trailer you like is no longer a

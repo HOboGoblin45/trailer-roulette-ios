@@ -462,6 +462,45 @@ describe('createEndDetector — ad-hardened mode', () => {
     expect(clock.lastMs).toBe(END_DETECT_DEFAULTS.preContentConfirmMs);
   });
 
+  // v3.2.1 refused to fast-path without a pin. The pin only exists once the
+  // newer proxy is deployed, so on the live app that meant a five-second stall
+  // at the end of every trailer, filled by YouTube's own replay button.
+  it('fast-paths an unpinned real end when the clip outruns any pre-roll ad', () => {
+    const clock = trackedClock();
+    const onEnd = vi.fn();
+    let p = { currentTime: 0, duration: 142 };
+    const d = createEndDetector({
+      onEnd,
+      getProgress: () => p,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    d.onProgress(1, 142); // enhanced mode, but no pin ever arrives
+    d.onProgress(5, 142);
+    p = { currentTime: 141.2, duration: 142 };
+    d.onState(0);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(onEnd.mock.calls[0][0].confirmedBy).toBe('progress');
+  });
+
+  it('does NOT fast-path an unpinned clip short enough to be an ad', () => {
+    const clock = trackedClock();
+    const onEnd = vi.fn();
+    let p = { currentTime: 0, duration: 45 };
+    const d = createEndDetector({
+      onEnd,
+      getProgress: () => p,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    d.onProgress(10, 45);
+    d.onProgress(25, 45);
+    p = { currentTime: 44.7, duration: 45 };
+    d.onState(0);
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(clock.lastMs).toBe(END_DETECT_DEFAULTS.preContentConfirmMs);
+  });
+
   it('legacy callers (no feeds, no pin) keep exact v3.1.0 fast-path behavior', () => {
     const clock = trackedClock();
     const onEnd = vi.fn();

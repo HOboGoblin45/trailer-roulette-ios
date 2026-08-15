@@ -190,6 +190,8 @@ export default async function handler(request) {
   // Mirrors app/src/lib/endDetection.js — see that file for the full design.
   var CONFIRM_MS = 1200, PRE_CONTENT_CONFIRM_MS = 5000;
   var MIN_CONTENT = 32, END_EPS = 1.5, PIN_EPS = 2.5, CONFIRM_PROGRESS = 3;
+  // With no pin, a clip longer than this is the trailer, not a pre-roll ad.
+  var UNPINNED_CONTENT = 65;
   // A sample must advance by more than this to count as playback. Anything
   // smaller is the player re-reporting where it already is — which is exactly
   // what it does once a video has genuinely ENDED, so a real end can never be
@@ -335,8 +337,8 @@ export default async function handler(request) {
         // window to 1.2s, which is less than a typical ad-pod gap. Unpinned we
         // stay on the 5s window: a real end is then 5s rather than 1.2s late,
         // which is the right way round to be wrong.
-        if (!contentConfirmed && pin && progressAccum >= CONFIRM_PROGRESS && pinOk(lastDuration)) {
-          contentConfirmed = true;
+        if (!contentConfirmed && progressAccum >= CONFIRM_PROGRESS) {
+          if (pin ? pinOk(lastDuration) : (lastDuration >= UNPINNED_CONTENT)) contentConfirmed = true;
         }
       }
       return;
@@ -359,11 +361,11 @@ export default async function handler(request) {
         // from a finished 45s unskippable ad, so we fall through to the
         // confirm window rather than risk cutting a trailer short — 5s until
         // content confirms (ad pods gap slowly), 1.2s after.
-        var fastPath = pin > 0 && pinOk(lastDuration) &&
-          lastDuration > 0 &&
-          lastTime >= lastDuration - END_EPS &&
-          lastTime >= MIN_CONTENT &&
-          contentConfirmed;
+        var reachedEnd = lastDuration > 0 && lastTime >= lastDuration - END_EPS;
+        var fastPath = reachedEnd && (
+          (pin > 0 && pinOk(lastDuration) && lastTime >= MIN_CONTENT && contentConfirmed) ||
+          (pin <= 0 && lastDuration >= UNPINNED_CONTENT)
+        );
         if (fastPath) {
           forwardEnded();
         } else {

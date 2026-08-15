@@ -76,6 +76,7 @@ export const END_DETECT_DEFAULTS = {
   endEpsilonSeconds: 1.5, // how close to duration counts as "reached the end"
   pinEpsilonSeconds: 2.5, // how far a reported duration may drift from the pinned content duration
   confirmProgressSeconds: 3, // forward progress required to count as real content playback
+  unpinnedContentSeconds: 65, // with no pin, a clip longer than this is content, not an ad
   progressEpsilonSeconds: 0.25, // a sample must advance by more than this to count as playback
 };
 
@@ -107,6 +108,7 @@ export function createEndDetector(opts = {}) {
     endEpsilonSeconds = END_DETECT_DEFAULTS.endEpsilonSeconds,
     pinEpsilonSeconds = END_DETECT_DEFAULTS.pinEpsilonSeconds,
     confirmProgressSeconds = END_DETECT_DEFAULTS.confirmProgressSeconds,
+    unpinnedContentSeconds = END_DETECT_DEFAULTS.unpinnedContentSeconds,
     progressEpsilonSeconds = END_DETECT_DEFAULTS.progressEpsilonSeconds,
     setTimer = (fn, ms) => setTimeout(fn, ms),
     clearTimer = (handle) => clearTimeout(handle),
@@ -198,8 +200,16 @@ export function createEndDetector(opts = {}) {
       // ending at its own duration fast-path a false advance -- the fast-path
       // only saves the confirm window, so when we cannot tell an ad's end from
       // the trailer's we wait instead.
+      // Unpinned fallback: playback reached the end of a clip longer than any
+      // pre-roll ad. Needed because the pin only exists once the v3.2.1+ proxy
+      // is deployed, and refusing to fast-path without one stalls the app on
+      // YouTube's replay screen at the end of every trailer.
+      const unpinnedContent = enhanced
+        && pinnedDuration <= 0
+        && Number.isFinite(p?.duration)
+        && p.duration >= unpinnedContentSeconds;
       const fastPathAllowed = enhanced
-        ? (pinnedDuration > 0 && contentConfirmed && pinOk(p?.duration))
+        ? ((pinnedDuration > 0 && contentConfirmed && pinOk(p?.duration)) || unpinnedContent)
         : true;
       if (fastPathAllowed && reachedEnd(p)) {
         report('progress', p);
@@ -256,6 +266,10 @@ export function createEndDetector(opts = {}) {
         // and confirmation shortens the resume-confirm window below a typical
         // ad-pod gap. Unpinned we stay on the long window.
         if (pinnedDuration > 0 && pinOk(lastKnown.duration)) contentConfirmed = true;
+        // No pin (older proxy): a clip longer than any pre-roll ad is content.
+        else if (pinnedDuration <= 0
+                 && Number.isFinite(lastKnown.duration)
+                 && lastKnown.duration >= unpinnedContentSeconds) contentConfirmed = true;
       }
     },
 
