@@ -4,6 +4,35 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.3.2] — 2026-08-14
+
+Does the one thing that was actually asked for: press Play once, and it keeps
+going by itself.
+
+### Removed
+- **Launch autoplay.** 3.3.0 read "auto play the video when it loads" as "open
+  the app straight into a full-screen player". That was the wrong reading. What
+  was wanted was for playback to CONTINUE without a tap, not to START without
+  one — and the automatic launch just put a loading screen between the user and
+  the app. The app opens on the stage again; Play starts it.
+- The first-run hint no longer gates anything. It is a plain first-launch
+  overlay now, so it cannot block playback if anything about it goes wrong.
+
+### Fixed
+- **Continuous playback no longer depends on catching an edge.** The reopen
+  after a trailer finished was edge-triggered on the current trailer's key
+  changing. Every way that edge can be missed looks identical to the user: the
+  player is closed, the session is still live, nothing reopens it, and they
+  press Play again for the next trailer. That one symptom outlived every other
+  fix in this app, and reasoning about the individual races kept failing to
+  remove it.
+  It is now level-triggered instead: a 1.2s poll reopens whenever a session is
+  active, no modal is open, and a real key exists. It cannot fight the user —
+  deliberately closing the player clears the session — and it cannot double-open,
+  because the open path bails while one is already in flight. Worst case a
+  reopen lands up to 1.2s late, against a previous worst case of stopping dead
+  until tapped.
+
 ## [3.3.1] — 2026-08-14
 
 Fixes the bug 3.2.1 introduced: trailers stopped advancing at all.

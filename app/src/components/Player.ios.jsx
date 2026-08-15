@@ -150,6 +150,11 @@ export default function PlayerIOS({
     TrailerPlayer.setMuted({ muted: !!muted }).catch(() => {});
   }, [muted]);
 
+  // Latest-value refs, so the safety net below never calls a stale closure.
+  const trailerRef = useRef(trailer);
+  const openTrailerRef = useRef(null);
+  useEffect(() => { trailerRef.current = trailer; }, [trailer]);
+
   // Continuous auto-reopen: when a new trailer becomes current while a
   // session is active and the modal is closed (the fallback path), reopen
   // automatically — no second tap. During in-place chaining the modal is
@@ -161,6 +166,34 @@ export default function PlayerIOS({
     openTrailer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trailer?.youtubeKey]);
+
+  // CONTINUOUS PLAYBACK SAFETY NET.
+  //
+  // The effect above is the intended path, and it is edge-triggered: it only
+  // runs when trailer.youtubeKey CHANGES. Every way that edge can be missed
+  // ends the same way for the user — the player is closed, a session is still
+  // active, and nothing reopens it, so they have to press Play again for the
+  // next trailer. That is the single complaint that has outlived every other
+  // fix in this app, and no amount of reasoning about the races has removed it.
+  //
+  // So stop relying on catching the edge. This polls the same three conditions
+  // and reopens whenever they are all true: a session the user started, no
+  // modal currently open or opening, and a real key to play. It cannot fight
+  // the user, because deliberately closing the player clears sessionRef, and it
+  // cannot double-open, because openTrailer bails while openingRef is set.
+  //
+  // Worst case it costs one reopen up to POLL_MS late; the alternative is a
+  // dead stop that needs a tap.
+  useEffect(() => {
+    const POLL_MS = 1200;
+    const t = setInterval(() => {
+      if (!sessionRef.current) return;
+      if (openingRef.current) return;
+      if (!trailerRef.current?.youtubeKey) return;
+      openTrailerRef.current?.();
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, []);
 
   const openTrailer = async () => {
     if (!trailer?.youtubeKey || openingRef.current) return;
@@ -211,6 +244,9 @@ export default function PlayerIOS({
       setOpening(false);
     }
   };
+
+  // Keep the safety net pointed at the current closure.
+  openTrailerRef.current = openTrailer;
 
   if (!trailer) {
     return (

@@ -19,8 +19,6 @@ import * as haptics from '../lib/haptics.js';
 
 const MAX_TRAILER_SECONDS = 180;
 const DEFAULT_CYCLE_SECONDS = 90;
-// How long the one-time first-run hint may block autoplay before it gives up.
-const HINT_MAX_MS = 15000;
 // The web cycle timer is a BACKSTOP, not the advance mechanism — the ad-aware
 // end detector advances at the real end. The countdown ticks through pre-roll
 // ad time too (content hasn't started yet), so the backstop must leave
@@ -152,13 +150,6 @@ export default function TrailerRoulette() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [muted, setMuted] = useState(false); // restored from storage on boot
   const [hintOpen, setHintOpen] = useState(false); // first launch only
-  // Autoplay is a two-part gate: `armed` says the launch-time restores are
-  // done and the hint (if any) is out of the way; `autoplayedRef` is the latch
-  // that makes it a once-per-launch event. State cannot carry the latch — any
-  // later render would re-run the effect and re-open a player the user may
-  // have just dismissed.
-  const [autoplayArmed, setAutoplayArmed] = useState(false);
-  const autoplayedRef = useRef(false);
 
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
@@ -266,8 +257,7 @@ export default function TrailerRoulette() {
       try {
         seenHint = (await storage.get(storage.KEYS.ONBOARDED)) === true;
       } catch { seenHint = true; }
-      if (seenHint) setAutoplayArmed(true);
-      else setHintOpen(true);
+      if (!seenHint) setHintOpen(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -275,63 +265,11 @@ export default function TrailerRoulette() {
   // The hint is dismissed: remember that, and hand off to autoplay.
   const onDismissHint = useCallback(() => {
     setHintOpen(false);
-    setAutoplayArmed(true);
     storage.set(storage.KEYS.ONBOARDED, true).catch(() => { /* best-effort */ });
   }, []);
 
-  // Safety net. Dismissing the hint was the ONLY path that armed autoplay on a
-  // first launch, which made a one-time overlay a single point of failure for
-  // the app's headline behaviour: if it ever failed to render its close
-  // control, or the tap did not land, the app would sit there forever and the
-  // trailer would never start. A hint that goes wrong should degrade to "no
-  // hint", never to "no playback". Anyone who wanted to read it has had long
-  // enough by now.
-  useEffect(() => {
-    if (!hintOpen) return undefined;
-    const t = setTimeout(() => { onDismissHint(); }, HINT_MAX_MS);
-    return () => clearTimeout(t);
-  }, [hintOpen, onDismissHint]);
 
-  // Burn the autoplay latch without firing it. Called from every path where
-  // the user has already taken control of playback before the first key
-  // arrived (tapping Play, opening a fun mode, switching channel): from that
-  // point on the launch has been answered by a human, and autoplay stepping
-  // in later would be the app fighting them.
-  const cancelAutoplay = useCallback(() => { autoplayedRef.current = true; }, []);
 
-  // AUTOPLAY — launch only. The app opens full-screen and plays by itself, so
-  // there is no tap between launching and watching.
-  //
-  // Deliberately NOT symmetric with the background/foreground rule below: on
-  // returning from the background we stay paused, because the native session
-  // is over and resuming would make the Play button lie and skip a trailer
-  // the user never saw. Autoplay answers a different question ("what should a
-  // cold launch do?") and must not be "fixed" into a general auto-resume.
-  //
-  // Three properties this has to hold, in order:
-  //   - it waits for a REAL youtubeKey. The queue loads first and keys are
-  //     prefetched after, so `current` exists for a while carrying no key at
-  //     all — firing on mount would open an empty player.
-  //   - it fires exactly once per launch. `autoplayedRef` latches
-  //     synchronously, before any state update, so a re-render (or React's
-  //     StrictMode double-invoke) re-enters and bails. Nothing clears it.
-  //   - it can never re-open a player the user closed. The latch is set
-  //     before the player can exist, so by the time any dismissal is possible
-  //     this effect is already spent; cancelAutoplay() closes the remaining
-  //     window where the user acts before the first key lands.
-  //
-  // It routes through playSignal — the one signal every Play path already
-  // uses — rather than adding a second way in, so it cannot collide with the
-  // continuous-playback auto-reopen in Player.ios.jsx (which is gated on its
-  // own sessionRef and stays untouched).
-  useEffect(() => {
-    if (!autoplayArmed) return;
-    if (autoplayedRef.current) return;
-    if (!current?.youtubeKey) return;
-    autoplayedRef.current = true;
-    setIsPlaying(true);
-    setPlaySignal((n) => n + 1);
-  }, [autoplayArmed, current?.youtubeKey]);
 
   // Switch source (theater picked, or back to Everything) and rebuild the
   // queue from scratch. Persisted so the app reopens on the same channel.
@@ -349,12 +287,11 @@ export default function TrailerRoulette() {
       } catch { /* persistence is best-effort */ }
     })();
     setIsPlaying(false); // ends any native session; Play starts the new channel
-    cancelAutoplay();    // this channel was chosen, not launched into
     setCurrent(null);
     setQueue([]);
     prefetchedRef.current = new Set();
     loadQueue();
-  }, [loadQueue, cancelAutoplay]);
+  }, [loadQueue]);
 
   const handleRetry = useCallback(async () => {
     setRetrying(true);
@@ -490,11 +427,10 @@ export default function TrailerRoulette() {
   // trailers keep auto-advancing on their own.
   const onSpin = useCallback(() => {
     haptics.medium();
-    cancelAutoplay(); // the user started it; autoplay has nothing left to do
     if (isPlaying) advance();
     setIsPlaying(true);
     setPlaySignal((n) => n + 1);
-  }, [isPlaying, advance, cancelAutoplay]);
+  }, [isPlaying, advance]);
 
   const onAirPlay = useCallback(async () => {
     haptics.medium();
@@ -716,7 +652,6 @@ export default function TrailerRoulette() {
           // while it is open would be spent on a component that is not there
           // and re-applied on mount when the mode closes. Autoplay must not
           // ambush the user on their way back to the stage.
-          cancelAutoplay();
           setActiveFeature(f);
         }}
         onClose={() => setMenuOpen(false)}
