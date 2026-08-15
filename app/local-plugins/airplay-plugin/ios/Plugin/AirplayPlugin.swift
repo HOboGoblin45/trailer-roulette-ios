@@ -3,8 +3,14 @@
 //  Trailer Roulette — AirPlay route picker
 //
 //  Wraps AVRoutePickerView so JS can present the system AirPlay picker and
-//  observe AirPlay state. Capacitor auto-registers this plugin via the
-//  CAP_PLUGIN macro in AirplayPlugin.m.
+//  observe AirPlay state.
+//
+//  Registration (v3.4.1): the comment here used to say Capacitor auto-registers
+//  this via the CAP_PLUGIN macro. That mechanism was removed in Capacitor 6 —
+//  the bridge now binds only classes conforming to CAPBridgedPlugin. Without it
+//  registerPlugin() silently resolved to the web fallback, whose
+//  presentRoutePicker returns { presented: false } and does nothing, so the
+//  AirPlay button — one of the app's two buttons — has been dead on device.
 //
 
 import Foundation
@@ -12,7 +18,15 @@ import AVKit
 import Capacitor
 
 @objc(AirplayPlugin)
-public class AirplayPlugin: CAPPlugin {
+public class AirplayPlugin: CAPPlugin, CAPBridgedPlugin {
+
+    public let identifier = "AirplayPlugin"
+    public let jsName = "AirplayPlugin"          // must match registerPlugin('AirplayPlugin')
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "presentRoutePicker", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isAirPlayActive", returnType: CAPPluginReturnPromise),
+    ]
+
 
     private var routePickerView: AVRoutePickerView?
 

@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 /**
  * TrailerPlayer — local Capacitor plugin for in-app YouTube trailer playback.
@@ -75,9 +75,31 @@ import { registerPlugin } from '@capacitor/core';
  * session; re-showing one between trailers would be a flash, not a courtesy.
  */
 
+/**
+ * On iOS this fallback must never run. If it does, the native plugin failed to
+ * register and the app has quietly stopped being the app: no modal, no chrome,
+ * no end detection, no chaining — just YouTube's own watch page opened in a
+ * tab, which looks enough like "a trailer playing" to hide the failure
+ * completely. That is precisely what happened before v3.4.1, when the Swift
+ * class had not been migrated to Capacitor 6's CAPBridgedPlugin: an entire
+ * release cycle of native work was unreachable and nothing anywhere said so.
+ *
+ * So on iOS this now throws. A visible error with a retry is worth far more
+ * than a silent degradation that costs days to spot.
+ */
+function assertNativeOniOS(method) {
+  if (Capacitor.getPlatform() !== 'ios') return;
+  const msg = `TrailerPlayer.${method} fell back to the web implementation on iOS. `
+    + 'The native plugin is not registered — check that the Swift class conforms to '
+    + 'CAPBridgedPlugin and declares identifier, jsName and pluginMethods.';
+  console.error(`[TrailerPlayer] ${msg}`);
+  throw new Error(msg);
+}
+
 const TrailerPlayer = registerPlugin('TrailerPlayer', {
   web: {
     openTrailer: async ({ youtubeKey } = {}) => {
+      assertNativeOniOS('openTrailer');
       if (typeof window === 'undefined' || !youtubeKey) {
         return { dismissed: true, reason: 'no-window', youtubeKey: youtubeKey || '' };
       }

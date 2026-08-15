@@ -4,6 +4,45 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.4.1] — 2026-08-14
+
+**The native plugins were never registered.** Everything below explains why the
+whole day's work had no visible effect on device.
+
+### Fixed
+- **`TrailerPlayer` and `AirplayPlugin` did not conform to `CAPBridgedPlugin`.**
+  Both were written in the Capacitor 5 shape — `@objc(Name)` plus a `CAPPlugin`
+  subclass with `@objc` methods, and in AirPlay's case a comment claiming the
+  `CAP_PLUGIN` macro handled registration. Capacitor 6 removed automatic plugin
+  registration. Its bridge binds only `CAPPlugin & CAPBridgedPlugin`
+  (`CapacitorBridge.swift`, which logs "Plugin must conform to
+  CAPBridgedPlugin"). This project runs Capacitor 7, and every official plugin
+  in `node_modules` conforms. Neither local plugin did.
+  Consequences, all silent:
+  - `registerPlugin('TrailerPlayer')` resolved to its **web fallback**, which
+    does `window.open('youtube.com/watch?v=...')`. So the native modal, the
+    glass chrome, end detection, chaining, the poster stage, the progress bar
+    and the playlist handoff never ran — on device the app opened YouTube's own
+    watch page. That page is what every "it just shows a replay button"
+    screenshot was actually showing.
+  - The Vercel proxy was never loaded either, which is why redeploying it would
+    not have helped.
+  - `AirplayPlugin` resolved to a fallback returning `{ presented: false }`, so
+    the AirPlay button did nothing. Both buttons of a two-button app were dead.
+  Both classes now conform and declare `identifier`, `jsName` and
+  `pluginMethods`.
+- **The iOS web fallback now throws instead of degrading silently.** Falling
+  back is what `registerPlugin` is designed to do, and it is right on the web —
+  but on iOS it meant a total failure of the app's core looked like a trailer
+  playing. It cost a full release cycle to spot. A visible error with a retry is
+  worth more than a silent degradation.
+
+### Note
+Every native change from 3.2.1, 3.2.2, 3.3.1 and 3.4.0 is reaching a device for
+the first time in this build. They compile and their logic is unit-tested, but
+none of it has ever executed on hardware, so treat this build as the first real
+test of all of it rather than a small patch on top of tested work.
+
 ## [3.4.0] — 2026-08-14
 
 Stops reimplementing something YouTube already does.

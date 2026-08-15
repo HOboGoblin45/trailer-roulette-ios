@@ -146,7 +146,27 @@ import WebKit
 import Capacitor
 
 @objc(TrailerPlayer)
-public class TrailerPlayer: CAPPlugin {
+public class TrailerPlayer: CAPPlugin, CAPBridgedPlugin {
+    // CAPACITOR 6+ REGISTRATION (v3.4.1). This class subclassed CAPPlugin alone,
+    // which is the Capacitor 5 shape. Capacitor 6 removed automatic plugin
+    // registration: the bridge only binds classes conforming to CAPBridgedPlugin
+    // (see CapacitorBridge.swift, `typealias CapacitorPlugin = CAPPlugin &
+    // CAPBridgedPlugin`, and its "Plugin must conform to CAPBridgedPlugin" log).
+    // Without it the plugin is invisible to JS, registerPlugin() silently resolves
+    // to the web fallback, and every native feature in this file never runs — with
+    // no error anywhere, because falling back is what registerPlugin is designed
+    // to do. That is exactly what happened: a full day of native work on the
+    // player had no effect on the device, because none of it was ever reachable.
+
+    public let identifier = "TrailerPlayer"
+    public let jsName = "TrailerPlayer"          // must match registerPlugin('TrailerPlayer')
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "openTrailer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "enqueueNext", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMuted", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "closeTrailer", returnType: CAPPluginReturnPromise),
+    ]
+
 
     private weak var presentedVC: TrailerPlayerViewController?
     private var pendingCall: CAPPluginCall?
