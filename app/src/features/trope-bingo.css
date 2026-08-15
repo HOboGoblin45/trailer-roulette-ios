@@ -13,34 +13,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  /* Root gap: 14px was a tie between --space-3 (12) and --space-4 (16) on the
+     token scale. Bingo has the tallest content of any mode (a 5x5 grid plus
+     header, toolbar and footer) and is the one explicitly flagged for the
+     iPhone SE width check below, so this rounds down to keep vertical rhythm
+     tighter rather than looser. */
+  gap: var(--space-3);
   text-align: center;
 }
 
 /* ---- Header ---- */
 .bingo-head {
   margin-top: 4px;
-}
-
-.bingo-title {
-  margin: 0;
-  font-size: clamp(26px, 8vw, 40px);
-  font-weight: 900;
-  letter-spacing: 2px;
-  line-height: 1.05;
-  color: var(--b-fg);
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
-}
-
-.bingo-title-pop {
-  display: inline-block;
-  color: var(--b-gold);
-  animation: bingo-wobble 3.2s ease-in-out infinite;
-}
-
-@keyframes bingo-wobble {
-  0%, 100% { transform: rotate(-3deg) scale(1); }
-  50% { transform: rotate(3deg) scale(1.06); }
 }
 
 .bingo-sub {
@@ -64,7 +48,7 @@
   border: 0;
   cursor: pointer;
   padding: 11px 18px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.3px;
@@ -85,7 +69,7 @@
 
 .bingo-counter {
   padding: 9px 16px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   font-size: 14px;
   font-weight: 700;
   color: var(--b-fg-2);
@@ -139,7 +123,7 @@
   justify-content: center;
   padding: 3px;
   overflow: hidden;
-  border-radius: 11px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--b-bg-3);
   background: var(--b-bg-2);
   color: var(--b-fg-2);
@@ -150,6 +134,19 @@
 
 .bingo-cell:active {
   transform: scale(0.93);
+}
+
+/* Re-deal stagger, held for DEAL_MS (620ms in TropeBingo.jsx) after "New
+   card". Every cell carries style={{ '--i': idx }} (0-24); duration + the
+   widest delay must land inside that budget with room to spare:
+   24 * 14ms (max delay) + 260ms (duration) = 596ms < 620ms. */
+.bingo-grid.is-dealing .bingo-cell {
+  animation: bingo-deal 260ms var(--spring) both;
+  animation-delay: calc(var(--i, 0) * 14ms);
+}
+@keyframes bingo-deal {
+  from { opacity: 0; transform: translateY(10px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .bingo-cell-text {
@@ -284,6 +281,10 @@
   top: 42%;
   width: 9px;
   height: 14px;
+  /* Deliberately a small literal, not a token: this is a thin paper-scrap
+     rectangle (the 4n variant below stays 7x16 with no radius at all), and
+     --radius-sm (10px) would round it into a pill on a 9px-wide piece,
+     changing the shape the confetti is going for. */
   border-radius: 2px;
   background: hsl(var(--hue, 205), 90%, 60%);
   opacity: 0;
@@ -326,7 +327,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bingo-title-pop,
   .bingo-counter.is-hot,
   .bingo-cell.is-free .bingo-cell-text,
   .bingo-confetto {
@@ -335,11 +335,19 @@
   .bingo-cell.is-marked {
     animation: none;
   }
+  /* This used to swap in a calmer 2.2s custom fade (bingo-banner-static)
+     instead of the full bingo-banner-pop. That duration was already dead —
+     the global reduced-motion rule in styles/index.css forces
+     animation-duration to 0.01ms with !important, which always outranks
+     this non-important override — and both keyframes end their final frame
+     at opacity:0, so once collapsed to ~0.01ms the swap made no visible
+     difference: the text would settle on "invisible" for virtually the
+     whole 2200ms BANNER_MS the JS keeps it mounted, in either case. Rather
+     than leave that bug in place, this now just holds the text fully
+     visible for its whole mount window under reduced motion — no animation
+     needed to communicate "you won", which is the point of the banner. */
   .bingo-banner-text {
-    animation: bingo-banner-static 2.2s ease both;
-  }
-  @keyframes bingo-banner-static {
-    0%, 85% { opacity: 1; }
-    100% { opacity: 0; }
+    animation: none;
+    opacity: 1;
   }
 }

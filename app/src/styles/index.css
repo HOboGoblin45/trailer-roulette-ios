@@ -14,6 +14,9 @@
  *     uppercase, and tracked wide. System font everywhere.
  *   - SPRING FEEDBACK: controls compress on touch (scale 0.96) with a fast
  *     ease-out; nothing fades without moving.
+ *   - SYMMETRY OF ARRIVAL AND DEPARTURE: anything that animates in animates
+ *     out. Overlays hold their mount for --exit-ms via useDismissAnimation()
+ *     and leave on --exit-ease; an element is never cut mid-flight.
  *
  * This file intentionally replaces eight generations of layered overrides
  * (v1.6 → v3.1). Every rule below is used by the current two-button app,
@@ -81,6 +84,26 @@
   /* Motion */
   --spring: cubic-bezier(0.32, 0.72, 0, 1);
   --press: cubic-bezier(0.2, 0, 0.4, 1);
+
+  /* Exit motion. Entrances ease OUT — they arrive and settle. Exits must ease
+     IN: slow start, accelerating away, so a dismissal reads as "leaving" and
+     not as "the same animation played backwards". --exit-ms is the contract
+     with src/lib/useDismissAnimation.js (its EXIT_MS constant); if one moves
+     the other moves with it, or the overlay unmounts mid-flight. */
+  --exit-ease: cubic-bezier(0.4, 0, 1, 1);
+  --exit-ms: 240ms;
+
+  /* Spacing rhythm. One scale for the whole app: 4/8/12/16/24/32. The six fun
+     modes each invented their own gap (16px here, 18px there, 14px in a
+     third), which is why two modes opened back to back never feel like the
+     same app. New work uses these; existing ad-hoc values migrate as their
+     files are touched. Never invent a seventh step. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
 }
 
 /* ─────────────────────────── Base ─────────────────────────── */
@@ -149,6 +172,30 @@ a { color: var(--accent); text-decoration: none; }
   .feat-close, .screen-header, .player-play-button { background: rgba(22, 24, 31, 0.92); }
 }
 
+/* ─────────────────────────── Focus visibility ─────────────────────────── */
+/* Every control in this app was invisible to keyboard and Switch Control
+   users: the glass chrome carries no focus affordance and the UA ring is
+   suppressed on dark backgrounds. One shared ring, scoped to :focus-visible
+   so a thumb tap never lights it up — only keyboard, Switch Control, and
+   Full Keyboard Access get it.
+   The selector list is wrapped in :where() so this rule stays at zero
+   specificity: a component that needs a different ring just styles it, no
+   !important arms race.
+   The 2px offset is deliberate and small: .app-shell, .tr-stage and
+   .player-wrap all clip with overflow: hidden, and every focusable control
+   sits at least 12px inside them, so a 2+2px ring survives the clip. Do not
+   grow the offset without checking the topbar and the actions row. */
+:where(a[href], button, input, select, textarea, summary,
+       [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Belt and braces for engines that still paint a ring on touch focus. */
+:where(a[href], button, input, select, textarea, summary,
+       [tabindex]):focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* ─────────────────────────── The stage ─────────────────────────── */
 /* One immersive screen: full-bleed video with floating glass chrome. */
 
@@ -189,14 +236,32 @@ a { color: var(--accent); text-decoration: none; }
 .player iframe { width: 100%; height: 100%; border: 0; }
 .player-web > div { width: 100% !important; height: 100% !important; }
 
+/* The empty state stacks: spinner, then an optional caption under it, so
+   "nothing is happening" always comes with a reason. */
+.player-empty { flex-direction: column; }
+
 .player-empty .player-spinner {
   width: 30px; height: 30px;
   border: 2.5px solid var(--hairline-strong);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  /* linear, not an ease: an eased curve applied to a looping rotation makes
+     the spinner surge and stall once per revolution, which reads as a stutter
+     on a 120Hz display. Continuous motion is the one place linear is right. */
+  animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Optional caption beneath the spinner ("Finding a trailer…"). Quiet enough
+   that it never competes with the artwork behind it. */
+.player-empty-caption {
+  margin: var(--space-3) 0 0;
+  max-width: 260px;
+  color: var(--fg-dim);
+  font-size: 13px; line-height: 1.35; letter-spacing: -0.01em;
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
 
 /* iOS idle card: the movie's backdrop with a glass play control. */
 .player-ios .player-backdrop {
@@ -206,28 +271,47 @@ a { color: var(--accent); text-decoration: none; }
   transform: scale(1.02);
 }
 
-/* The big circular glass Play. Icon is centroid-centered SVG — true optical
-   centering with flexbox, no margin nudges. */
+/* The big glass Play. Icon is centroid-centered SVG — true optical centering
+   with flexbox, no margin nudges.
+   Geometry: a capsule, not a circle, because the button now carries a label.
+   Height is pinned at 88px (icon 36 + gap 4 + caption ~13 leaves ~17px of
+   breathing room top and bottom); width is free above a 132px floor that is
+   wide enough for every current state string, so switching from "Play
+   trailer" to "Opening…" does not resize the control under the user's thumb.
+   A longer label grows the capsule rather than clipping. */
 .player-play-button {
   position: relative; z-index: 5;
-  width: 88px; height: 88px;
+  min-width: 132px; height: 88px;
   display: inline-flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: 0; border-radius: 50%;
+  padding: 0 var(--space-5); border-radius: var(--capsule);
   background: var(--glass-thin);
   -webkit-backdrop-filter: var(--glass-filter);
   backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border-strong);
   box-shadow: var(--glass-edge);
   color: #fff;
-  transition: transform 0.16s var(--press), background 0.16s ease;
+  transition: transform 0.16s var(--press), background 0.16s var(--press);
 }
 .player-play-button:active:not(:disabled) {
   transform: scale(0.94);
   background: rgba(255, 255, 255, 0.18);
 }
 .player-play-button .play-icon { width: 36px; height: 36px; display: block; }
-.player-play-button .play-label { display: none; }
+/* The label was display:none, so tapping Play produced no visible response at
+   all while the native modal spun up over the network — the one moment the
+   app most needs to say something. Shown as an SF-style caption: small,
+   uppercase, tracked wide, so it reads as a status line under the glyph
+   rather than as a second title. */
+.player-play-button .play-label {
+  display: block;
+  margin-top: var(--space-1);
+  max-width: 220px;
+  font-size: 11px; font-weight: 700; line-height: 1.2;
+  text-transform: uppercase; letter-spacing: 0.09em;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .player-play-button:disabled {
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--glass-border);
@@ -251,6 +335,24 @@ a { color: var(--accent); text-decoration: none; }
   padding: 10px 14px;
   border-radius: var(--radius);
   font-size: 13px; font-weight: 500; text-align: center;
+  /* The card now carries a retry control, not just a sentence. Stack them so
+     the action is a deliberate second target rather than text the thumb
+     lands on by accident. */
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--space-3);
+}
+
+/* Full-bleed stage only. The bare offsets above are correct inside a fun
+   mode's small player box, but on the main stage the player fills the screen,
+   so bottom: 12–14px puts the hint and the error banner underneath the home
+   indicator AND behind the Play/AirPlay row (which is z-index 6 at
+   safe-bottom + 24, 58px tall). Lift both clear of the row: 24 + 58 + 12.
+   Scoped to .player-wrap so the fun modes keep their own tight spacing. */
+.player-wrap .player-hint { bottom: calc(env(safe-area-inset-bottom, 0px) + 94px); }
+.player-wrap .player-error {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 94px);
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
 }
 
 /* Thin progress hairline for the current trailer (web cycle timer). */
@@ -268,19 +370,47 @@ a { color: var(--accent); text-decoration: none; }
 
 .tr-topbar {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
-  display: flex; align-items: center; justify-content: flex-end;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   /* Clear the Dynamic Island / notch even if the webview reports a zero
-     safe-area inset. */
-  padding: max(env(safe-area-inset-top, 0px), 52px) 16px 16px;
+     safe-area inset. Sides take the larger of the design gutter and the
+     landscape inset, so a rotated iPhone does not tuck the Theater pill under
+     the notch or the info button under the rounded corner. */
+  padding:
+    max(env(safe-area-inset-top, 0px), 52px)
+    max(16px, env(safe-area-inset-right, 0px))
+    16px
+    max(16px, env(safe-area-inset-left, 0px));
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0) 100%);
   pointer-events: none;
 }
 .tr-topbar > * { pointer-events: auto; }
-.tr-topbar-right { display: flex; align-items: center; gap: 10px; }
+.tr-topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
+.tr-topbar-right { display: flex; align-items: center; gap: 10px; flex: none; }
+
+/* Theater pill — long market names truncate instead of crowding the bar. */
+.tr-pill-theater { max-width: 100%; min-width: 0; }
+.tr-pill-theater-label {
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.tr-pill-theater.is-tuned {
+  background: rgba(61, 165, 244, 0.20);
+  border-color: rgba(61, 165, 244, 0.5);
+}
+
+/* Live "Now Showing" badge — the channel is tuned to a real theater. */
+.tr-badge-live {
+  background: rgba(61, 165, 244, 0.26);
+  border-color: rgba(61, 165, 244, 0.5);
+  color: #fff;
+  font-weight: 700;
+}
 
 /* Labeled glass capsule — the fun-modes entry point. Labeled on purpose:
    a bare star read as "favorite", not "menu". */
 .tr-pill {
+  /* positioned so the hit-area pseudo below anchors to the pill and not to
+     the absolutely-positioned topbar */
+  position: relative;
   display: inline-flex; align-items: center; gap: 7px;
   height: 40px; min-height: 40px; padding: 0 15px;
   border-radius: var(--capsule);
@@ -290,7 +420,7 @@ a { color: var(--accent); text-decoration: none; }
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-edge-soft);
   color: #fff; font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
-  transition: transform 0.16s var(--press), background 0.16s ease;
+  transition: transform 0.16s var(--press), background 0.16s var(--press);
 }
 .tr-pill:active { transform: scale(0.95); background: rgba(255, 255, 255, 0.17); }
 .tr-pill svg { color: var(--accent); }
@@ -306,15 +436,32 @@ a { color: var(--accent); text-decoration: none; }
   backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-edge-soft);
-  transition: transform 0.16s var(--press), background 0.16s ease;
+  transition: transform 0.16s var(--press), background 0.16s var(--press);
 }
 .tr-glyph:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.17); }
+
+/* Hit-area extension: 40px of glass, 44px of touch (--tap). Both controls
+   set an explicit height that undercuts the global button minimum, and the
+   topbar is where a mis-hit is most likely — thumb at the top of a large
+   phone. Absolutely positioned so it is never a flex item and cannot shift
+   the pill's contents; invisible because it has no background. */
+.tr-pill::before,
+.tr-glyph::before {
+  content: '';
+  position: absolute; inset: -2px;
+  border-radius: var(--capsule);
+}
 
 /* ─────────────────────────── Now playing ─────────────────────────── */
 
 .tr-cardinfo {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
-  padding: 90px 20px calc(env(safe-area-inset-bottom, 0px) + 118px);
+  /* Sides respect the landscape insets for the same reason as the topbar. */
+  padding:
+    90px
+    max(20px, env(safe-area-inset-right, 0px))
+    calc(env(safe-area-inset-bottom, 0px) + 118px)
+    max(20px, env(safe-area-inset-left, 0px));
   background: linear-gradient(180deg,
     rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.45) 45%, rgba(0, 0, 0, 0.88) 100%);
   pointer-events: none;
@@ -330,12 +477,20 @@ a { color: var(--accent); text-decoration: none; }
   font-size: 26px; font-weight: 800; line-height: 1.1;
   margin: 0 0 10px; letter-spacing: -0.03em;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
+  /* TMDB ships titles with unbroken tokens (long foreign compounds, URLs in
+     bad rows). At 26/800 on a 375pt screen one of those runs straight out of
+     the card and gets sliced off by .tr-stage's overflow: hidden. */
+  overflow-wrap: break-word;
 }
 .tr-year { font-weight: 500; opacity: 0.65; font-size: 0.82em; letter-spacing: -0.01em; }
 
 .tr-badges { display: flex; flex-wrap: wrap; gap: 7px; }
 .tr-badge {
   font-size: 12px; font-weight: 600; letter-spacing: 0.01em;
+  /* The live badge is "Now Showing · <market> · <month>" — an unbounded
+     string. Flex items do not shrink below their content, so without a cap
+     the longest markets push the badge past the card and off the screen. */
+  max-width: 100%; overflow-wrap: break-word;
   padding: 4px 11px; border-radius: var(--capsule);
   background: var(--glass-ultrathin);
   border: 1px solid var(--glass-border);
@@ -356,7 +511,9 @@ a { color: var(--accent); text-decoration: none; }
   position: absolute; left: 0; right: 0; z-index: 6;
   bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
   display: flex; align-items: center; justify-content: center; gap: 14px;
-  padding: 0 20px; pointer-events: none;
+  padding: 0 max(20px, env(safe-area-inset-right, 0px))
+           0 max(20px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
 }
 .tr-roulette-actions > * { pointer-events: auto; }
 
@@ -365,7 +522,8 @@ a { color: var(--accent); text-decoration: none; }
   height: 58px; padding: 0 26px; border-radius: var(--capsule);
   font-size: 17px; font-weight: 700; letter-spacing: -0.02em;
   color: #fff; border: 0; cursor: pointer;
-  transition: transform 0.16s var(--press), box-shadow 0.2s ease, opacity 0.15s ease;
+  transition: transform 0.16s var(--press), box-shadow 0.2s var(--press),
+              opacity 0.15s var(--press);
 }
 .tr-rbtn:active { transform: scale(0.96); }
 .tr-rbtn:disabled { opacity: 0.5; }
@@ -403,6 +561,20 @@ a { color: var(--accent); text-decoration: none; }
 .tr-rbtn-air svg { color: var(--accent); }
 .tr-rbtn-air:active { background: rgba(255, 255, 255, 0.17); }
 
+/* Narrow phones (iPhone SE 1st gen / iPhone 8 at 320pt). Two 26px-padded
+   capsules plus a 14px gap inside 20px gutters need ~270pt of content width;
+   at 320pt they overflow and .tr-stage's overflow: hidden slices the AirPlay
+   button off the right edge. Tighten the gutters and the capsule padding
+   rather than letting a control disappear. 375pt (SE 2/3) already fits. */
+@media (max-width: 359px) {
+  .tr-roulette-actions {
+    gap: 10px;
+    padding: 0 max(14px, env(safe-area-inset-right, 0px))
+             0 max(14px, env(safe-area-inset-left, 0px));
+  }
+  .tr-rbtn { padding: 0 18px; gap: 8px; }
+}
+
 /* ─────────────────────────── Error banner ─────────────────────────── */
 
 .tmdb-error-banner {
@@ -419,15 +591,29 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--fg);
   font-size: 14px;
   white-space: pre-wrap; word-break: break-word;
+  /* TMDB error strings are unbounded and rendered pre-wrap. Centred on 50%
+     with no cap, a long one grows past the viewport and .tr-stage's
+     overflow: hidden then eats the Try again button at the bottom — the only
+     way out of the failure. Cap it and let the banner scroll instead. */
+  max-height: 62svh;
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .tmdb-error-banner button {
+  position: relative;
   align-self: flex-start;
   background: var(--danger); color: #fff;
   padding: 9px 20px; min-height: 38px;
   border-radius: var(--capsule);
   font-weight: 600; font-size: 14px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: transform 0.15s var(--press), opacity 0.15s ease;
+  transition: transform 0.15s var(--press), opacity 0.15s var(--press);
+}
+/* 38px pill, 44px touch — the retry button is the only way out of a failed
+   load, so it must not be the hardest thing in the app to hit. */
+.tmdb-error-banner button::before {
+  content: '';
+  position: absolute; inset: -3px;
+  border-radius: var(--capsule);
 }
 .tmdb-error-banner button:active { transform: scale(0.96); opacity: 0.9; }
 
@@ -440,14 +626,36 @@ a { color: var(--accent); text-decoration: none; }
   min-height: 100%;
   background: var(--bg);
   overflow-y: auto; -webkit-overflow-scrolling: touch;
-  animation: trInfoIn 0.35s var(--spring) both;
+  /* Own entrance. It used to borrow .tr-cardinfo's trInfoIn, whose 12px rise
+     is tuned for a caption block; on a full-height panel that reads as a
+     flicker rather than a presentation. A percentage rise scales with the
+     device and matches how a fullScreenCover arrives on iOS. */
+  animation: screenIn 0.35s var(--spring) both;
 }
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(3%); }
+  to   { opacity: 1; transform: none; }
+}
+/* Dismissal. Mirror of screenIn on the exit curve — see "Exit motion" in the
+   tokens. useDismissAnimation() holds the panel mounted for --exit-ms while
+   this plays, so the fill mode must keep the last frame or the panel snaps
+   back to full opacity for one frame before unmounting. */
+.screen.is-closing {
+  animation: screenOut var(--exit-ms) var(--exit-ease) both;
+  pointer-events: none;   /* a leaving panel must not take a second tap */
+}
+@keyframes screenOut {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(3%); }
+}
+
 .screen-header {
   display: grid;
   grid-template-columns: var(--tap) 1fr var(--tap);
   align-items: center;
   min-height: 52px;
-  padding: 0 6px;
+  padding: 0 max(6px, env(safe-area-inset-right, 0px))
+           0 max(6px, env(safe-area-inset-left, 0px));
   padding-top: max(env(safe-area-inset-top, 0px), 14px);
   background: rgba(5, 6, 8, 0.72);
   -webkit-backdrop-filter: var(--glass-filter);
@@ -458,13 +666,23 @@ a { color: var(--accent); text-decoration: none; }
 .screen-header h1 {
   margin: 0; text-align: center;
   font-size: 17px; font-weight: 600; letter-spacing: -0.02em;
+  /* The title sits in a 1fr column between two 44px controls. A long title
+     would otherwise wrap under the back button and push the header height
+     around; iOS truncates instead. */
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .back-btn {
   font-size: 24px; color: var(--accent);
   display: flex; align-items: center; justify-content: center;
 }
 
-.about-screen { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
+/* Side insets keep the grouped cards clear of the notch when the phone is
+   rotated; both resolve to 0 in portrait, so nothing moves there. */
+.about-screen {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
 .about-section {
   margin: 16px 16px 0;
   padding: 16px 18px;
@@ -502,7 +720,11 @@ a { color: var(--accent); text-decoration: none; }
     radial-gradient(120% 90% at 50% 0%, #14161C 0%, #050608 72%);
   color: var(--fg);
   display: flex; flex-direction: column;
-  padding: max(env(safe-area-inset-top, 0px), 20px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  padding:
+    max(env(safe-area-inset-top, 0px), 20px)
+    max(16px, env(safe-area-inset-right, 0px))
+    calc(env(safe-area-inset-bottom, 0px) + 16px)
+    max(16px, env(safe-area-inset-left, 0px));
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   animation: featIn 0.3s var(--spring) both;
 }
@@ -510,6 +732,20 @@ a { color: var(--accent); text-decoration: none; }
   from { opacity: 0; transform: translateY(14px) scale(0.99); }
   to   { opacity: 1; transform: none; }
 }
+/* Dismissal. Every mode opened with a spring and then vanished on the frame
+   the user tapped close — the file's own header promises "nothing fades
+   without moving", and that was the one place the app broke it.
+   useDismissAnimation() adds .is-closing and holds the mount for --exit-ms;
+   `both` pins the last frame so the mode is never caught mid-flight. */
+.feat.is-closing {
+  animation: featOut var(--exit-ms) var(--exit-ease) both;
+  pointer-events: none;   /* a leaving panel must not take a second tap */
+}
+@keyframes featOut {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(10px) scale(0.99); }
+}
+
 .feat-close {
   position: absolute;
   top: max(env(safe-area-inset-top, 0px), 14px); right: 14px; z-index: 2;
@@ -522,7 +758,16 @@ a { color: var(--accent); text-decoration: none; }
   backdrop-filter: var(--glass-filter);
   box-shadow: var(--glass-edge-soft);
   color: #fff; font-size: 17px; cursor: pointer;
-  transition: transform 0.16s var(--press), background 0.16s ease;
+  transition: transform 0.16s var(--press), background 0.16s var(--press);
+}
+/* 40px glass, 44px touch. This is the only exit control on all six fun modes
+   and the most-tapped button in the app; it was 4pt under our own documented
+   minimum. The circle keeps its proportions — the pseudo-element carries the
+   missing 2pt on every side and changes no layout. */
+.feat-close::before {
+  content: '';
+  position: absolute; inset: -2px;
+  border-radius: 50%;
 }
 .feat-close:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.17); }
 
@@ -533,10 +778,45 @@ a { color: var(--accent); text-decoration: none; }
 }
 
 /* ─────────────────────────── Reduced motion ─────────────────────────── */
+/*
+ * Default: motion off. Anything that has not opted out is neutralised —
+ * duration and delay collapse, and animation-iteration-count drops to 1 so an
+ * infinite loop (.tr-rbtn-play's trPlayGlow, every spinner) actually STOPS.
+ * Without the iteration cap a 0.01ms loop keeps restarting forever, which is
+ * how the old blanket rule turned a calm glow into a strobe — the exact
+ * opposite of what the user asked for.
+ *
+ * ESCAPE HATCH — `motion-safe-exempt`:
+ * Reduce Motion means "less motion", not "no motion at any cost"; five of the
+ * six fun modes deliberately SLOW their spinners rather than freeze them,
+ * because a frozen spinner reads as a hung app. A blanket !important on the
+ * universal selector out-ranked all of those hand-tuned intents. So this rule
+ * skips any element carrying `motion-safe-exempt` and everything inside it:
+ *
+ *     <div className="cinema-spinner motion-safe-exempt" />
+ *     .cinema-spinner { animation-duration: 1.6s; }   // now survives
+ *
+ * Put the class on the specific element you tuned, not on a mode's root —
+ * exempting a root exempts its whole subtree and hands back motion the user
+ * did not ask for. If you exempt something, you own making it calm.
+ *
+ * :not(:where(...)) keeps the whole rule at zero specificity on purpose, so a
+ * component can also win with a plain !important of its own; :where() also
+ * parses forgivingly, so an engine that cannot handle the descendant argument
+ * degrades to "motion off everywhere" rather than dropping the rule.
+ */
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  html { scroll-behavior: auto !important; }
+
+  *:not(:where(.motion-safe-exempt, .motion-safe-exempt *)),
+  *:not(:where(.motion-safe-exempt, .motion-safe-exempt *))::before,
+  *:not(:where(.motion-safe-exempt, .motion-safe-exempt *))::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
   }
 }

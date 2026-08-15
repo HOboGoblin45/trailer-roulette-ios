@@ -9,6 +9,7 @@ import {
 } from '../lib/tmdb.js';
 import Player from '../components/Player.jsx';
 import * as haptics from '../lib/haptics.js';
+import { useOverlay, useStageEnter } from './overlay.js';
 
 /**
  * Roulette Wheel — spin a colorful 6-segment wheel that lands on a decade,
@@ -17,6 +18,8 @@ import * as haptics from '../lib/haptics.js';
  * Flow (kept strictly SEQUENTIAL so it works on iOS where native playback
  * covers this UI): idle → spinning → fetching → playing → result → (re-spin).
  */
+
+const TITLE = 'Roulette Wheel';
 
 // Order matters: index 0 is the segment at the TOP (under the pointer) when
 // rotation = 0. We render segments clockwise starting from the top.
@@ -70,6 +73,7 @@ function labelPos(i) {
 const rand = (n) => Math.floor(Math.random() * n);
 
 export default function RouletteWheel({ onClose }) {
+  const { closing, close, dialogProps } = useOverlay({ onClose, label: TITLE });
   const [phase, setPhase] = useState(PHASE.IDLE);
   const [rotation, setRotation] = useState(0);          // accumulated degrees
   const [landedIndex, setLandedIndex] = useState(null); // which segment won
@@ -106,9 +110,10 @@ export default function RouletteWheel({ onClose }) {
       try {
         const data = await discoverMovies({ decade, page });
         if (Array.isArray(data?.results)) pool = pool.concat(data.results);
-      } catch (e) {
-        // Try the next page; only bail if we end up with nothing.
-        console.warn('[wheel] discoverMovies failed', e);
+      } catch {
+        // Try the next page; only bail if we end up with nothing. A dead page
+        // is an ordinary outcome here, not something to log — the caller
+        // already tells the user when every decade comes back empty.
       }
     }
     if (!pool.length) return null;
@@ -131,8 +136,10 @@ export default function RouletteWheel({ onClose }) {
           cand.youtubeKey = vid.key;
           return cand;
         }
-      } catch (e) {
-        console.warn('[wheel] getTrailer failed', e);
+      } catch {
+        // No trailer for this one (or the lookup blipped) — try the next
+        // movie. Every other mode skips these silently; this one used to warn
+        // up to eight times per spin.
       }
     }
     return null;
@@ -263,15 +270,18 @@ export default function RouletteWheel({ onClose }) {
   const resultGenres =
     trailer ? genreNames(trailer.genre_ids).slice(0, 2) : [];
   const resultPoster = trailer ? posterUrl(trailer.poster_path) : null;
+  // The result panel used to appear on a hard cut the instant the trailer
+  // ended; it now fades up like every other payoff in the app.
+  const entered = useStageEnter(phase);
 
   return (
-    <div className="feat feat-wheel">
-      <button className="feat-close" onClick={onClose} aria-label="Close">
+    <div className={`feat feat-wheel${closing ? ' is-closing' : ''}`} {...dialogProps}>
+      <button type="button" className="feat-close" onClick={close} aria-label="Close">
         ✕
       </button>
 
       <header className="wheel-head">
-        <h2 className="wheel-title">Roulette Wheel</h2>
+        <h1 className="feat-title">{TITLE}</h1>
         <p className="wheel-sub">Spin to land on a decade, then watch a random trailer.</p>
       </header>
 
@@ -365,7 +375,7 @@ export default function RouletteWheel({ onClose }) {
             <div className="wheel-status" role="status">
               Playing a {landedDecade?.decade}s trailer…
             </div>
-            <button className="wheel-finish-btn" onClick={handleClosed}>
+            <button type="button" className="wheel-finish-btn" onClick={handleClosed}>
               Done watching
             </button>
           </>
@@ -378,7 +388,7 @@ export default function RouletteWheel({ onClose }) {
         )}
 
         {phase === PHASE.RESULT && trailer && (
-          <div className="wheel-result">
+          <div className={`wheel-result feat-enter${entered ? ' is-in' : ''}`}>
             {resultPoster ? (
               <img
                 className="wheel-poster"
@@ -395,10 +405,12 @@ export default function RouletteWheel({ onClose }) {
               <span className="wheel-decade-chip">
                 {landedDecade?.decade}s
               </span>
-              <h3 className="wheel-movie-title">
+              {/* h2, not h3: the mode title is this panel's only h1 and
+                  nothing sits between them. */}
+              <h2 className="wheel-movie-title">
                 {trailer.title}
                 {trailer.year ? <span className="wheel-year"> ({trailer.year})</span> : null}
-              </h3>
+              </h2>
               {resultGenres.length > 0 && (
                 <div className="wheel-genres">
                   {resultGenres.map((g) => (
@@ -414,6 +426,7 @@ export default function RouletteWheel({ onClose }) {
 
         {phase !== PHASE.PLAYING && (
           <button
+            type="button"
             className="wheel-spin-btn"
             onClick={spin}
             disabled={busy}

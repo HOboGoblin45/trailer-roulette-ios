@@ -8,11 +8,55 @@
  * v3.1.0: ad-aware end detection. YouTube fires onStateChange ENDED (0) when
  * a pre-roll AD finishes, before the real video plays; forwarding that raw
  * event cut trailers off after ~15s. The page now tracks playback progress
- * (infoDelivery currentTime/duration) and only forwards a real end — one that
- * reached the video's true end, or that stays ended without an ad boundary
- * resuming playback within a short window. Backward compatible: the forwarded
- * event still carries { kind:'stateChange', state } (now plus t/d), which older
- * native builds ignore, so already-shipped builds get the fix too.
+ * (infoDelivery currentTime/duration) and only forwards a real end.
+ *
+ * v3.2.0: ad-HARDENED detection + liveness heartbeat. Three residual holes
+ * fixed:
+ *   1. SILENT ADS vs the native 12s watchdog (the "~13 seconds" regression).
+ *      Some pre-roll ad variants keep the content player in UNSTARTED — no
+ *      PLAYING (1) fires while the ad runs. This page only forwarded state
+ *      changes, so during such an ad native heard NOTHING, its "no PLAYING
+ *      within 12s = dead video" watchdog fired, and every ad-backed trailer
+ *      was skipped at ~13s. The page now emits a 1s HEARTBEAT
+ *      ({ kind:'hb', state, t, d, yt, cc }) so native can tell "alive, ad
+ *      still rolling" from "actually dead" and only give up on the latter.
+ *   2. SLOW AD-POD GAPS: the 1.2s resume-confirm window falsely advanced when
+ *      the next ad / the content took 2-4s to start after an ad's ENDED. The
+ *      confirm window is now 5s until content playback is CONFIRMED (>= 3s of
+ *      observed forward progress on a clip whose duration matches the pinned
+ *      content metadata), then 1.2s for snappy real ends.
+ *   3. LONG-AD FAST-PATH: a >= 32s unskippable ad reaching its own end looked
+ *      exactly like a "real end" to the fast-path. The fast-path now also
+ *      requires content confirmation and a pin match. The content duration is
+ *      pinned from initialDelivery metadata BEFORE any ad plays and forwarded
+ *      to native as { kind:'meta', pin }.
+ *
+ * v3.2.1: the v3.2.0 work was correct about the cause and incomplete about the
+ * cure. Three holes, all the same mistake — trusting onStateChange in a
+ * situation defined by onStateChange not firing:
+ *   1. UNREACHABLE FIX. 'hb' is a v3.2.0 invention, so only a v3.2.0+ native
+ *      build benefits. Every phone in the wild runs v2.11.0 or v3.1.0, whose
+ *      12s watchdog is cancelled by exactly one thing: a stateChange:1. During
+ *      a silent ad this page sent them nothing they understood, so redeploying
+ *      the proxy could not fix a single installed app. The page now announces
+ *      live playback as a stateChange:1 (marked syn:true) the moment playback
+ *      demonstrably advances — the vocabulary every build already speaks.
+ *   2. SILENT AD-POD ADVANCE. The resume-confirm timer was cancellable only by
+ *      a state event. When the next ad in a pod (or the content) started
+ *      silently, nothing cancelled it, so the page forwarded a FALSE ENDED and
+ *      native skipped the trailer a few seconds in. Forward playback progress
+ *      now cancels a pending end; a genuinely ended video cannot, because its
+ *      currentTime stops advancing.
+ *   3. AD DURATION PINNED AS CONTENT. The pin accepted any duration seen
+ *      before a PLAYING state — which, for the very ad variants at issue, is
+ *      the ad's own duration. A mis-pin makes the ad look like the content and
+ *      lets the ad's end fast-path a false advance. The pin now comes only
+ *      from initialDelivery (player metadata for the cued video), and the
+ *      fast-path requires a pin rather than treating "no pin" as a match.
+ *
+ * All additions are backward compatible: older native builds ignore unknown
+ * kinds ('hb', 'meta') and extra fields, and this page still forwards the
+ * same { kind:'stateChange', state, t, d } events they expect.
  *
  * Why this works where every other approach failed:
  *   - The page is at https://trailer-roulette.vercel.app/embed (a real
@@ -53,6 +97,10 @@ export default async function handler(request) {
   const controls = url.searchParams.get('controls') === '0' ? '0' : '1';
   const ivLoadPolicy = url.searchParams.get('iv_load_policy') === '3' ? '3' : '1';
   const fs = url.searchParams.get('fs') === '0' ? '0' : '1';
+  // Epoch token (v3.2.0): native hands us its per-load token; we echo it on
+  // every message so native can drop stale messages that cross a load/swap
+  // boundary. Absent (older native builds) = 0, harmless.
+  const epoch = String(parseInt(url.searchParams.get('e') || '0', 10) || 0);
 
   if (!VALID_ID.test(v)) {
     return new Response(`<!doctype html><meta charset=utf-8><title>Trailer</title><body style="margin:0;background:#000;color:#aaa;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh">Invalid or missing video id.</body>`, {
@@ -107,8 +155,12 @@ export default async function handler(request) {
   // Bridge to native (iOS WKWebView). webkit.messageHandlers.trailerEvent
   // is set up by the TrailerPlayer.swift plugin's userContentController.
   // On desktop browsers, this is a no-op — the page still plays normally.
+  // Every message carries the current epoch token (v3.2.0) so native can
+  // drop messages that straddle a video load/swap boundary.
+  var trEpoch = ${epoch};
   function toNative(event) {
     try {
+      event.e = trEpoch;
       if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.trailerEvent) {
         window.webkit.messageHandlers.trailerEvent.postMessage(event);
       }
@@ -134,20 +186,74 @@ export default async function handler(request) {
     toNative({ kind: 'iframeLoaded' });
   });
 
-  // Ad-aware end detection (v3.1.0) -------------------------------------
-  // YouTube fires onStateChange ENDED (0) when a PRE-ROLL AD finishes, before
-  // the real video plays. Forwarding that as "ended" cut the trailer off after
-  // ~15s. We only forward a real end: either playback reached the end of a
-  // plausibly-long video, or the player stays ended without resuming within a
-  // short confirm window (an ad boundary resumes playback and cancels it). The
-  // native plugin (TrailerPlayer.swift) and the web player (endDetection.js)
-  // mirror this exact logic, so the fix holds even on older app builds and
-  // even if a build ships before this proxy is redeployed.
-  var CONFIRM_MS = 1200, MIN_CONTENT = 32, END_EPS = 1.5;
-  var lastTime = 0, lastDuration = 0, endTimer = null;
+  // Ad-hardened end detection (v3.2.0, corrected v3.2.1) -----------------
+  // Mirrors app/src/lib/endDetection.js — see that file for the full design.
+  var CONFIRM_MS = 1200, PRE_CONTENT_CONFIRM_MS = 5000;
+  var MIN_CONTENT = 32, END_EPS = 1.5, PIN_EPS = 2.5, CONFIRM_PROGRESS = 3;
+  // A sample must advance by more than this to count as playback. Anything
+  // smaller is the player re-reporting where it already is — which is exactly
+  // what it does once a video has genuinely ENDED, so a real end can never be
+  // mistaken for "still playing".
+  var PROGRESS_EPS = 0.25;
+  // Pre-v3.2.0 builds only cancel their 12s "no PLAYING = unplayable"
+  // watchdog on a stateChange:1, so announce liveness comfortably before it.
+  var SYN_PLAYING_MS = 9000;
+  // Having silenced that watchdog we own its job: if nothing EVER plays, hand
+  // back an error so every build skips rather than sitting on a black screen.
+  var NO_PLAYBACK_CAP_MS = 75000;
+  var lastTime = 0, lastDuration = 0, lastState = -1, endTimer = null;
+  var sawYt = false;           // any message accepted from the YT iframe
+  var pin = 0;                 // content duration pinned from initialDelivery, 0 = none
+  var pinSent = false;
+  var contentConfirmed = false;
+  var progressAccum = 0, epochLastT = null;
+  var announcedPlaying = false; // a stateChange:1 has reached native this load
+  var everProgressed = false;   // playback has demonstrably advanced this load
+  var liveSince = Date.now();   // start of this load/swap
+  var capFired = false;
+
   function clearEndTimer() { if (endTimer) { clearTimeout(endTimer); endTimer = null; } }
   function forwardEnded() { clearEndTimer(); toNative({ kind: 'stateChange', state: 0, t: lastTime, d: lastDuration }); }
-  function resetProgress() { lastTime = 0; lastDuration = 0; clearEndTimer(); }
+  function pinOk(d) { return !pin || (isFinite(d) && Math.abs(d - pin) <= PIN_EPS); }
+  function resetEpoch() { progressAccum = 0; epochLastT = null; }
+  function resetProgress() {
+    lastTime = 0; lastDuration = 0; lastState = -1;
+    pin = 0; pinSent = false; contentConfirmed = false;
+    announcedPlaying = false; everProgressed = false; capFired = false;
+    liveSince = Date.now();
+    resetEpoch(); clearEndTimer();
+  }
+
+  // Tell native that playback is live, in the one vocabulary EVERY shipped
+  // build understands. The 'hb' heartbeat below carries richer liveness, but
+  // builds older than v3.2.0 ignore unknown kinds and skip the trailer at 12s;
+  // a stateChange:1 is what actually cancels their watchdog. 'syn' marks it as
+  // proxy-synthesised so v3.2.1+ native can keep its own 75s cap running.
+  function announcePlaying(syn) {
+    if (announcedPlaying) return;
+    announcedPlaying = true;
+    toNative({ kind: 'stateChange', state: 1, t: lastTime, d: lastDuration, syn: !!syn });
+  }
+
+  // Liveness heartbeat (v3.2.0): native's watchdog used to require PLAYING
+  // within 12s — but some ad variants keep the content player UNSTARTED while
+  // the ad rolls, so native heard silence and skipped live trailers at ~13s.
+  // A 1s heartbeat lets native distinguish "alive, ad rolling" from "dead".
+  setInterval(function () {
+    toNative({ kind: 'hb', state: lastState, t: lastTime, d: lastDuration, yt: sawYt, cc: contentConfirmed });
+    var age = Date.now() - liveSince;
+    // The YT player is present and talking but has not announced playback —
+    // the silent-ad case. Vouch for it before old builds give up at 12s.
+    if (!announcedPlaying && sawYt && age >= SYN_PLAYING_MS) announcePlaying(true);
+    // Nothing has played and the player never even claimed to be playing.
+    // A dead video id skips instantly via onError, so this only catches the
+    // rare stalled case — but old builds no longer have a watchdog of their
+    // own, so something has to.
+    if (!capFired && !everProgressed && lastState !== 1 && age >= NO_PLAYBACK_CAP_MS) {
+      capFired = true;
+      toNative({ kind: 'error', code: 5 });
+    }
+  }, 1000);
 
   // Gapless swap (v2.9.0): swap the playing video WITHOUT reloading the page.
   // The native player calls window.trLoad('NEWID') instead of navigating to a
@@ -155,10 +261,11 @@ export default async function handler(request) {
   // ~0.5s in-player swap rather than a 2-3s cold page load. Older app builds
   // that don't call this are unaffected (the page still autoplays ?v= on load).
   var VALID = /^[A-Za-z0-9_-]{6,20}$/;
-  window.trLoad = function (id) {
+  window.trLoad = function (id, e) {
     if (!VALID.test(id || '')) return false;
     try {
-      resetProgress(); // new video — forget the previous clip's progress
+      if (typeof e === 'number' && isFinite(e)) trEpoch = e; // new epoch (v3.2.0 native)
+      resetProgress(); // new video — forget the previous clip's progress/pin
       iframe.contentWindow.postMessage(
         JSON.stringify({ event: 'command', func: 'loadVideoById', args: [String(id)] }),
         'https://www.youtube-nocookie.com'
@@ -185,30 +292,84 @@ export default async function handler(request) {
       try { data = JSON.parse(data); } catch (err) { return; }
     }
     if (!data || !data.event) return;
+    sawYt = true;
 
     if (data.event === 'infoDelivery' || data.event === 'initialDelivery') {
-      // Track playback progress so we can tell a real end from an ad boundary.
       var info = data.info || {};
-      if (typeof info.currentTime === 'number' && isFinite(info.currentTime)) lastTime = info.currentTime;
-      if (typeof info.duration === 'number' && isFinite(info.duration) && info.duration > 0) lastDuration = info.duration;
+      var t = info.currentTime, d = info.duration;
+      var hasT = (typeof t === 'number' && isFinite(t));
+      var hasD = (typeof d === 'number' && isFinite(d) && d > 0);
+      if (hasD) lastDuration = d;
+      // PIN: initialDelivery is the player's metadata push for the CUED video,
+      // sent before anything plays, so its duration is the CONTENT's.
+      // infoDelivery during a pre-roll reports the AD's duration — and the ad
+      // variants this release is about never fire PLAYING, so "no PLAYING yet"
+      // was never enough to tell the two apart. Pinning an ad's duration is
+      // worse than having no pin at all: it makes the ad look like content and
+      // lets the ad's own end fast-path a false advance. Only initialDelivery,
+      // and only while nothing has played.
+      if (hasD && !pin && data.event === 'initialDelivery' && !everProgressed) {
+        pin = d;
+        if (!pinSent) { pinSent = true; toNative({ kind: 'meta', pin: pin }); }
+      }
+      if (hasT) {
+        // Accumulate genuinely-watched forward progress (ignore seek jumps).
+        var moved = (epochLastT !== null && t > epochLastT + PROGRESS_EPS && (t - epochLastT) < 8);
+        if (moved) { progressAccum += (t - epochLastT); everProgressed = true; }
+        epochLastT = t;
+        lastTime = t;
+        if (moved) {
+          // Playback is demonstrably live. Whatever ENDED we are holding was
+          // an ad boundary, even though nothing announced itself as PLAYING —
+          // that silence is precisely the ad variant behind this bug, and
+          // waiting only for a state event is what let the confirm timer fire
+          // mid-ad-pod and skip the trailer. A genuinely ended video never
+          // gets here: its currentTime stops advancing.
+          clearEndTimer();
+          announcePlaying(true);
+        }
+        // CONFIRM: this clip is the content, not an ad. That claim needs
+        // something to check against, so it needs the pin. v3.2.0 also
+        // accepted "duration >= 32s" when unpinned, but a 45s unskippable ad
+        // passes that too — and confirmation shortens the resume-confirm
+        // window to 1.2s, which is less than a typical ad-pod gap. Unpinned we
+        // stay on the 5s window: a real end is then 5s rather than 1.2s late,
+        // which is the right way round to be wrong.
+        if (!contentConfirmed && pin && progressAccum >= CONFIRM_PROGRESS && pinOk(lastDuration)) {
+          contentConfirmed = true;
+        }
+      }
       return;
     }
 
     if (data.event === 'onStateChange') {
       var state = data.info;
+      if (typeof state === 'number') lastState = state;
       if (state === 1 || state === 3) {
         // PLAYING / BUFFERING — playback (re)started, so any pending "ended"
         // was a pre-roll ad boundary. Cancel it and forward the live state.
         clearEndTimer();
+        if (state === 1) announcedPlaying = true;
         toNative({ kind: 'stateChange', state: state, t: lastTime, d: lastDuration });
       } else if (state === 0) {
-        // ENDED — real end or ad boundary. Fast-path only if playback reached
-        // the end of a plausibly-long clip; otherwise wait to confirm.
-        if (lastDuration > 0 && lastTime >= lastDuration - END_EPS && lastTime >= MIN_CONTENT) {
+        // ENDED — real end or ad boundary. Fast-path only when playback
+        // reached the end of the clip we have CONTENT METADATA for: the
+        // duration must match the pin taken from initialDelivery before
+        // anything played. Without that pin we cannot tell a finished trailer
+        // from a finished 45s unskippable ad, so we fall through to the
+        // confirm window rather than risk cutting a trailer short — 5s until
+        // content confirms (ad pods gap slowly), 1.2s after.
+        var fastPath = pin > 0 && pinOk(lastDuration) &&
+          lastDuration > 0 &&
+          lastTime >= lastDuration - END_EPS &&
+          lastTime >= MIN_CONTENT &&
+          contentConfirmed;
+        if (fastPath) {
           forwardEnded();
         } else {
           clearEndTimer();
-          endTimer = setTimeout(forwardEnded, CONFIRM_MS);
+          resetEpoch(); // next thing to play (ad or content) measures fresh
+          endTimer = setTimeout(forwardEnded, contentConfirmed ? CONFIRM_MS : PRE_CONTENT_CONFIRM_MS);
         }
       } else {
         // PAUSED (2), CUED (5), UNSTARTED (-1) — forward unchanged.

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { discoverRandomMix, getTrailer, toTrailerCandidate, genreNames, posterUrl } from '../lib/tmdb.js';
 import Player from '../components/Player.jsx';
 import * as haptics from '../lib/haptics.js';
+import { useOverlay, useStageEnter } from './overlay.js';
 
 /**
  * Guess the Year — watch a trailer, then pin its exact release year on a slider.
@@ -12,6 +13,7 @@ import * as haptics from '../lib/haptics.js';
  * leaks before the guess.
  */
 
+const TITLE = 'Guess the Year';
 const MIN_YEAR = 1970;
 const MAX_YEAR = new Date().getFullYear();
 const MID_YEAR = Math.round((MIN_YEAR + MAX_YEAR) / 2);
@@ -40,6 +42,7 @@ function verdictFor(diff) {
 }
 
 export default function GuessYear({ onClose }) {
+  const { closing, close, dialogProps } = useOverlay({ onClose, label: TITLE });
   const [stage, setStage] = useState(STAGE.LOADING);
   const [movie, setMovie] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -143,10 +146,16 @@ export default function GuessYear({ onClose }) {
   };
 
   const genres = movie ? genreNames(movie.genre_ids).slice(0, 2) : [];
+  // The watching -> guessing swap is the biggest beat of a round; it used to
+  // be a cut. Every stage now paints out-state first and transitions in.
+  const entered = useStageEnter(stage);
+  const enter = `feat-enter${entered ? ' is-in' : ''}`;
 
   return (
-    <div className="feat feat-year">
-      <button className="feat-close" onClick={onClose} aria-label="Close">✕</button>
+    <div className={`feat feat-year${closing ? ' is-closing' : ''}`} {...dialogProps}>
+      <button type="button" className="feat-close" onClick={close} aria-label="Close">✕</button>
+
+      <h1 className="feat-title">{TITLE}</h1>
 
       <header className="year-scorebar">
         <div className="year-score">
@@ -167,24 +176,24 @@ export default function GuessYear({ onClose }) {
         </div>
       </header>
 
-      <h1 className="year-heading">Guess the Year</h1>
-
       {stage === STAGE.LOADING && (
-        <div className="year-center">
+        <div className={`year-center ${enter}`} role="status" aria-live="polite">
           <div className="year-spinner" aria-hidden="true" />
-          <p className="year-dim">Cueing up a trailer...</p>
+          <p className="year-dim">Cueing up a trailer…</p>
         </div>
       )}
 
       {stage === STAGE.ERROR && (
-        <div className="year-center">
+        <div className={`year-center ${enter}`} role="alert">
           <p className="year-dim">Couldn&apos;t load a trailer right now.</p>
-          <button className="year-btn year-btn-primary" onClick={next}>Try again</button>
+          <button type="button" className="year-btn year-btn-primary" onClick={next}>
+            Try again
+          </button>
         </div>
       )}
 
       {stage === STAGE.WATCHING && movie && (
-        <div className="year-watch">
+        <div className={`year-watch ${enter}`}>
           <div className="year-player">
             <Player
               key={movie.id}
@@ -200,13 +209,14 @@ export default function GuessYear({ onClose }) {
             />
           </div>
           <p className="year-dim">Watch the trailer, then guess its year.</p>
-          <button className="year-btn" onClick={toGuessing}>I have a guess</button>
+          <button type="button" className="year-btn" onClick={toGuessing}>I have a guess</button>
         </div>
       )}
 
       {stage === STAGE.GUESSING && (
-        <div className="year-guesser">
-          <div className="year-bigyear">{guess}</div>
+        <div className={`year-guesser ${enter}`}>
+          {/* The slider announces the same number; don't say it twice. */}
+          <div className="year-bigyear" aria-hidden="true">{guess}</div>
           <input
             className="year-slider"
             type="range"
@@ -216,17 +226,20 @@ export default function GuessYear({ onClose }) {
             value={guess}
             onChange={(e) => setGuess(Number(e.target.value))}
             aria-label="Pick a year"
+            aria-valuetext={String(guess)}
           />
           <div className="year-ends">
             <span>{MIN_YEAR}</span>
             <span>{MAX_YEAR}</span>
           </div>
-          <button className="year-btn year-btn-primary" onClick={lockIn}>Lock it in</button>
+          <button type="button" className="year-btn year-btn-primary" onClick={lockIn}>
+            Lock it in
+          </button>
         </div>
       )}
 
       {stage === STAGE.REVEALED && result && movie && (
-        <div className="year-reveal">
+        <div className="year-reveal" role="status" aria-live="polite">
           <div className={`year-verdict${result.diff === 0 ? ' is-bullseye' : ''}`}>{result.verdict}</div>
           <div className="year-actual">
             <span className="year-actual-num">{result.actual}</span>
@@ -244,7 +257,12 @@ export default function GuessYear({ onClose }) {
           </p>
           <div className="year-movie">
             {posterUrl(movie.poster_path) ? (
-              <img className="year-poster" src={posterUrl(movie.poster_path)} alt="" />
+              <img
+                className="year-poster"
+                src={posterUrl(movie.poster_path)}
+                alt={`${movie.title} poster`}
+                loading="lazy"
+              />
             ) : (
               <div className="year-poster year-poster-empty">No poster</div>
             )}
@@ -255,7 +273,9 @@ export default function GuessYear({ onClose }) {
               </p>
             </div>
           </div>
-          <button className="year-btn year-btn-primary" onClick={next}>Next trailer</button>
+          <button type="button" className="year-btn year-btn-primary" onClick={next}>
+            Next trailer
+          </button>
         </div>
       )}
     </div>

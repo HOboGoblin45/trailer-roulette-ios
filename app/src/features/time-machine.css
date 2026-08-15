@@ -56,9 +56,12 @@
   flex-direction: column;
   align-items: center;
   gap: 18px;
-  animation: time-fade-in 0.4s ease both;
+  animation: time-fade-in 300ms var(--spring) both;
 }
 
+/* Motion budget: iOS state changes are 0.25-0.35s with spring or ease-out.
+   Every use of this keyframe below used to run at 0.4-0.5s on a plain
+   `ease`; all four now share one in-budget spring. */
 @keyframes time-fade-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -158,7 +161,7 @@
   min-height: 60px;
   padding: 12px 30px;
   border: 1px solid var(--tm-glow-soft);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background:
     linear-gradient(180deg, rgba(61, 165, 244, 0.18), rgba(61, 165, 244, 0.06)),
     var(--bg-2, #16181f);
@@ -271,14 +274,14 @@
   align-items: center;
   gap: 7px;
   padding: 7px 14px 7px 11px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   border: 1px solid var(--tm-glow-soft);
   background: rgba(7, 8, 11, 0.55);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
   box-shadow: 0 0 22px var(--tm-glow-faint);
-  animation: time-fade-in 0.4s ease both;
+  animation: time-fade-in 300ms var(--spring) both;
 }
 .time-badge-star {
   color: var(--tm-glow);
@@ -310,7 +313,7 @@
   margin-top: auto;
   text-align: left;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.9);
-  animation: time-fade-in 0.45s ease both;
+  animation: time-fade-in 300ms var(--spring) both;
 }
 .time-nowplaying-title {
   font-size: 21px;
@@ -334,7 +337,7 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   border: 1px solid rgba(245, 246, 248, 0.18);
   background: rgba(33, 36, 45, 0.6);
   color: var(--fg-2, #aeb6c4);
@@ -353,20 +356,20 @@
   align-items: center;
   gap: 11px;
   padding: 8px 12px 8px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: rgba(7, 8, 11, 0.5);
   border: 1px solid rgba(245, 246, 248, 0.08);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   text-align: left;
-  animation: time-fade-in 0.5s ease both;
+  animation: time-fade-in 300ms var(--spring) both;
 }
 .time-upnext-poster {
   width: 38px;
   height: 56px;
   flex: 0 0 auto;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-3, #21242d);
 }
 .time-upnext-poster-empty {
@@ -409,7 +412,7 @@
   flex: 1 1 0;
   min-height: 52px;
   padding: 12px 14px;
-  border-radius: 13px;
+  border-radius: var(--radius);
   border: 1px solid rgba(245, 246, 248, 0.16);
   background: rgba(22, 24, 31, 0.78);
   backdrop-filter: blur(10px);

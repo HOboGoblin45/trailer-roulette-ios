@@ -53,7 +53,7 @@
   width: 100%;
   background: linear-gradient(180deg, var(--bg-2), var(--bg-3));
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 22px;
+  border-radius: var(--radius-lg);
   padding: 28px 22px 24px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
   text-align: center;
@@ -75,11 +75,6 @@
   margin: 0 0 4px;
 }
 
-.feat-blind .blind-emoji {
-  font-size: 2.6rem;
-  margin-bottom: 6px;
-}
-
 /* ---- Buttons ------------------------------------------------------------ */
 .feat-blind .blind-btn {
   -webkit-appearance: none;
@@ -91,7 +86,7 @@
   font-size: 1rem;
   min-height: 48px;
   padding: 13px 18px;
-  border-radius: 14px;
+  border-radius: var(--radius);
   width: 100%;
   margin-top: 12px;
   transition: transform 0.12s ease, filter 0.12s ease, background 0.12s ease;
@@ -158,21 +153,9 @@
 .feat-blind .blind-mystery {
   position: relative;
   overflow: hidden;
-  animation: blind-rise 0.4s ease both;
-}
-
-.feat-blind .blind-kicker {
-  display: inline-block;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--gold);
-  background: rgba(61, 165, 244, 0.1);
-  border: 1px solid rgba(61, 165, 244, 0.28);
-  padding: 5px 12px;
-  border-radius: 999px;
-  margin-bottom: 14px;
+  /* Motion budget: state changes are 0.25-0.35s with spring or ease-out;
+     0.4s ease was outside that window. */
+  animation: blind-rise 300ms var(--spring) both;
 }
 
 /* Floating ghostly question marks for the mysterious vibe. */
@@ -223,7 +206,7 @@
 }
 .feat-blind .blind-redact {
   height: 11px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: repeating-linear-gradient(
     45deg,
     rgba(255, 255, 255, 0.08),
@@ -248,7 +231,7 @@
   width: 100%;
   aspect-ratio: 16 / 9;
   background: #000;
-  border-radius: 16px;
+  border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
@@ -281,7 +264,9 @@
   overflow: hidden;
   opacity: 0;
   transform: scale(0.94) translateY(14px);
-  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Motion budget: 0.25-0.35s with spring or ease-out; was 0.5s on two
+     separate custom curves. One shared spring, in budget. */
+  transition: opacity 300ms var(--spring), transform 300ms var(--spring);
 }
 .feat-blind .blind-reveal.is-in {
   opacity: 1;
@@ -318,10 +303,31 @@
   bottom: -34px;
   width: 88px;
   height: auto;
-  border-radius: 10px;
+  /* Locks the box to a poster ratio so it never pops from zero height while
+     the image loads. */
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-sm);
   border: 2px solid rgba(255, 255, 255, 0.14);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
   z-index: 2;
+}
+
+/* "No poster" placeholder — matches .wheel-poster--empty / .year-poster-empty:
+   an explicit height (not left to aspect-ratio alone, since this box holds
+   text, not an image) plus small centred dim text instead of an <img>. */
+.feat-blind .blind-reveal-poster-empty {
+  height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: var(--bg-3);
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* A quick light sweep across the hero when the reveal mounts. */
@@ -439,7 +445,7 @@
 .feat-blind .blind-verdict-result {
   margin-top: 16px;
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: var(--radius);
   text-align: center;
   animation: blind-pop 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }
@@ -473,13 +479,22 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .feat-blind .blind-spinner { animation-duration: 1.4s; }
+  /* .blind-spinner used to try to slow to 1.4s here, but the global reduced-
+     motion rule in styles/index.css forces animation-duration to 0.01ms
+     with !important, which always outranks this non-important override — so
+     the "slow spin" never actually ran; it silently froze instead. Freezing
+     is an acceptable reduced-motion outcome, so this now just stops it
+     explicitly rather than keeping a rule that claimed to do something it
+     didn't. If a genuine slowed spin is wanted, BlindDate.jsx needs to add
+     `motion-safe-exempt` to the .blind-spinner element — CSS alone can't opt
+     it out of the global override.
+     Same reasoning applied below: .blind-reveal's 0.3s override was equally
+     dead (beaten by the same !important rule), and removing it changes
+     nothing observable, since the global rule already collapses its
+     transition to near-instant. */
+  .feat-blind .blind-spinner { animation: none; }
   .feat-blind .blind-q,
   .feat-blind .blind-reveal-flash { animation: none; }
-  .feat-blind .blind-reveal {
-    transition: opacity 0.3s ease;
-    transform: none;
-  }
   .feat-blind .blind-mystery,
   .feat-blind .blind-verdict-result { animation: none; }
 }

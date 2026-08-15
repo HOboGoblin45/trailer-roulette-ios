@@ -11,7 +11,14 @@ import { registerPlugin } from '@capacitor/core';
  * Web/dev fallback: opens the watch URL in a new tab. Auto-resolved.
  *
  * API:
- *   await TrailerPlayer.openTrailer({ youtubeKey, title?, nextYoutubeKey?, nextTitle? })
+ *   await TrailerPlayer.openTrailer({
+ *     youtubeKey,          // string   — required, the YouTube video id
+ *     title?,              // string   — shown in the glass header
+ *     muted?,              // boolean  — start muted
+ *     nextYoutubeKey?,     // string   — primes the in-place chain target
+ *     nextTitle?,          // string   — header text for that next trailer
+ *     posterUrl?,          // string   — v3.2.2, see below
+ *   })
  *     → { dismissed: true, reason, youtubeKey }
  *       reason ∈ 'user' | 'ended' | 'skip' | 'replaced' | 'unplayable:<...>'
  *
@@ -31,6 +38,43 @@ import { registerPlugin } from '@capacitor/core';
  *           | 'skipped'  (user tapped in-player Skip → chained to next)
  *     cause ∈ 'ended' | 'unplayable' | 'user' (why an advance happened)
  */
+
+/**
+ * Options for {@link TrailerPlayer.openTrailer}.
+ *
+ * @typedef  {Object} OpenTrailerOptions
+ * @property {string}  youtubeKey        Required. YouTube video id.
+ * @property {string}  [title]           Shown in the player's glass header.
+ * @property {boolean} [muted]           Start muted.
+ * @property {string}  [nextYoutubeKey]  Primes the in-place chain target.
+ * @property {string}  [nextTitle]       Header text for that next trailer.
+ * @property {string}  [posterUrl]       v3.2.2, iOS only. See below.
+ *
+ * posterUrl: an https URL to artwork for THIS movie — a TMDB backdrop is ideal,
+ * a poster works. The native player shows it blurred and dimmed over the player
+ * for the 2-3s the Vercel proxy page takes to load, so the modal dissolves onto
+ * this movie's own artwork rather than onto pure black (which read as the app
+ * crashing), then cross-fades it away the instant anything starts playing.
+ *
+ * "The instant anything starts playing" includes a pre-roll ad, on purpose: the
+ * artwork covers the player, and YouTube API Services Developer Policies III.I.5
+ * forbids blocking served ads. A timer drops it regardless after a few seconds.
+ * Worth knowing on the JS side because it means the poster is a load-time
+ * courtesy only — never assume it is still up.
+ *
+ * Strictly optional and non-fatal in every failure mode: omitted, empty,
+ * non-https, or an unreachable URL all fall back to the plain black stage, so a
+ * caller that never passes it behaves exactly as it did before v3.2.2. Pass the
+ * same URL the JS stage is already showing —
+ * `backdropUrl(m.backdrop_path) || posterUrl(m.poster_path)` — so the handoff
+ * from the roulette stage into the player is visually continuous.
+ *
+ * There is deliberately no `nextPosterUrl`. After the first trailer, chaining is
+ * a ~0.5s in-place swap during which the WKWebView keeps painting the previous
+ * frame, so the native side retires the poster stage for the rest of the
+ * session; re-showing one between trailers would be a flash, not a courtesy.
+ */
+
 const TrailerPlayer = registerPlugin('TrailerPlayer', {
   web: {
     openTrailer: async ({ youtubeKey } = {}) => {

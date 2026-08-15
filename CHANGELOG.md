@@ -4,6 +4,212 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.2.2] — 2026-08-14
+
+A UI audit of the whole app, and a pass on making the native player feel like a
+real Apple video player rather than a web view in a modal.
+
+### Changed — the native player
+- **The player no longer opens onto a black screen.** It presented onto pure
+  black with a bare spinner for the 2-3s the proxy page takes to load, throwing
+  away the artwork the user was already looking at. The movie's backdrop now
+  sits over the player while it loads and dissolves away the instant anything
+  starts playing. It retires on the FIRST playback of any kind, including a
+  pre-roll ad — holding it over a running ad would be blocking an ad, which
+  YouTube's Developer Policies §III.I.5 forbids. A 6s backstop covers the case
+  where an old proxy reports no playback signal at all.
+- **Swipe down to dismiss**, with rubber-banding, corner-radius growth and a
+  velocity threshold — the single most universal signal that a full-screen
+  video player is native. Presentation is now `.overFullScreen` with a
+  cross-dissolve, so the drag reveals the roulette stage underneath instead of
+  a void, and the player dissolves into the artwork it came from.
+- **The chrome auto-hides** after 3s and returns on tap. It can never be both
+  hidden and the only way out: the swipe gesture works regardless, and the
+  chrome stays pinned while loading or showing an error.
+- **A real progress bar**, fed by the `t`/`d` values the proxy heartbeat was
+  already sending, animated between samples so it glides. It stays hidden until
+  content is confirmed, so an ad's clock never drives it.
+- Title cross-fades instead of snapping when chaining trailers; soft haptic on
+  advance, light on Skip. Skip is now an SF Symbol matching the mute glyph.
+
+### Fixed — clunky UI across the app
+- **Every sheet and panel vanished with no exit animation** — they animated in
+  over 340ms and then unmounted on the same frame as the tap, which contradicts
+  the stylesheet's own stated rule that "nothing fades without moving". A
+  shared `useDismissAnimation` hook now plays a real exit for the fun-mode
+  sheet, all six modes, the theater picker and the About screen.
+- **Cinema Mode could strand you.** Its error state was dead code — nothing
+  ever set it — so a sustained TMDB failure left an infinite "Tuning the
+  channel…" spinner, and the close button faded out after 4s idle, leaving no
+  visible way out. The error state is now real with a working retry, and the
+  close button is permanently exempt from the chrome fade.
+- **The crash screen could loop forever.** `ErrorBoundary` auto-reset every
+  2.5s with no counter, so a persistent fault cycled crash → black flash →
+  crash indefinitely. Recovery is now budgeted (3 attempts / 60s) before
+  offering a real dead end with a prefilled report. It is also styled in the
+  app's own design language instead of looking like a different, broken app.
+- **Reduce Motion was silently defeated app-wide.** A universal `!important`
+  rule out-ranked every per-component override, so five of the six modes' tuned
+  spinners were clobbered into a flicker. The rule now respects component
+  intent via a `motion-safe-exempt` escape hatch and actually stops infinite
+  animations.
+- **Tapping Play gave no feedback** in an app whose entire UI is two buttons:
+  the "Opening…" label was hidden by `display: none`. The stage now shows a
+  spinner and caption on the tap frame.
+- Removed the duplicate Play control on the main stage (the bottom pill is the
+  app's identity). It is kept inside the fun modes, which have no pill and
+  would otherwise have no way back into a dismissed player.
+- Raw internal errors are no longer shown to users — `NSError` text and TMDB
+  failure strings were rendered verbatim. Fixed copy, with a retry action.
+- Theater picker: a clear button in search, keyboard dismissal, skeleton rows
+  so the sheet stops ballooning mid-interaction, truncation on the subtitle
+  line, honest "Near me" state, real swipe-to-dismiss on the grabber, and
+  separate no-results and no-data states.
+- Tap targets: `.feat-close` (the only exit from all six modes) and the Guess
+  the Year slider thumb were both under the 44pt minimum the app itself
+  defines. Fixed without changing their visual size.
+- Six mode stylesheets converged on the shared radius and spacing tokens (they
+  used none), and on the 0.25-0.35s spring motion budget (Cinema Mode ran every
+  chrome transition at 480ms `ease`). Dead rules removed.
+- Accessibility: focus-visible rings app-wide, `aria-modal` and focus trapping
+  on all seven overlays, Escape to close, a valid ARIA structure for the bingo
+  grid, and consistent poster alt text.
+
+### Testing
+95 vitest, eslint clean, `vite build` green. The native end-detection logic was
+re-extracted verbatim and re-run under Linux Swift after the UI changes — all
+checks still pass, including a new one asserting the poster backdrop cannot
+outlive the first ad frame. `TrailerPlayer.swift` is syntax-checked only; CI is
+the compile gate.
+
+## [3.2.1] — 2026-08-14
+
+Trailers were still being cut short. 3.2.0 identified the cause correctly but
+its cure had three holes, all the same mistake: relying on `onStateChange` in a
+bug whose defining symptom is that `onStateChange` does not fire. 3.2.0 was
+never tagged or released, so 3.2.1 is the first release carrying either.
+
+### Fixed
+- **The 3.2.0 fix could not reach a single installed app.** The liveness signal
+  it added is the `{kind:'hb'}` heartbeat, which only a 3.2.0+ native build
+  understands. Every phone in the wild runs 2.11.0 (App Store) or 3.1.0
+  (TestFlight), and those cancel their 12s "no PLAYING = unplayable" watchdog on
+  exactly one message: a `stateChange:1`. During a silent pre-roll ad the proxy
+  sent them nothing they understood, so redeploying it changed nothing — the
+  fix needed a new build through App Review to have any effect.
+  `landing-page/api/embed.js` now announces live playback as a `stateChange:1`
+  (tagged `syn:true`) the moment playback demonstrably advances. That is the
+  vocabulary every shipped build already speaks, so **`npx vercel --prod` now
+  fixes phones that are already out there**. Having silenced that watchdog the
+  proxy takes on its job: if nothing ever plays it emits `{kind:'error'}` at
+  75s, so no build can hang on a black screen.
+- **A silently-starting ad or trailer produced a false advance.** The
+  resume-confirm timer could only be cancelled by a `stateChange` 1/3. When the
+  next ad in a pod — or the trailer itself — started without one, nothing
+  cancelled it, the page forwarded a false ENDED, and native skipped the trailer
+  a few seconds in. Forward playback progress now cancels a pending end in all
+  three mirrors. A genuinely ended video cannot: its `currentTime` stops
+  advancing, which the new 0.25s progress epsilon tests for.
+- **An ad's duration could be pinned as the content's.** The pin accepted any
+  duration seen before a PLAYING state — which, for exactly the ad variants at
+  issue, is the ad's own duration. A wrong pin is worse than no pin: it makes
+  the ad look like the trailer and lets the ad's end fast-path a false advance.
+  The proxy now pins only from `initialDelivery` and only before anything has
+  played; `Player.web.jsx` additionally requires an untouched playhead and stops
+  trying 2.5s after `onReady`.
+- **"Long enough to be content" was not a safe test for content.** Confirmation
+  and the end fast-path treated an unpinned clip past 32s as the trailer, which
+  a 45s unskippable ad satisfies just as well — shortening the confirm window
+  below a typical ad-pod gap and unlocking the fast-path at the ad's own end.
+  Both now require a pin. Unpinned, a real end is reported via the 5s window
+  instead of instantly: later rather than wrong.
+- **The native 75s hard cap could dismiss a playing trailer.** It fired on
+  elapsed time alone, so an ad variant that never reports PLAYING would have a
+  visibly-playing trailer torn down mid-flight. It now also requires playback to
+  have been frozen for 20s.
+
+### Testing
+- `app/src/lib/__tests__/embedProxy.test.js` (new, 17 tests) renders the real
+  Edge Function, lifts its `<script>` out verbatim and runs it against a fake
+  DOM, fake YouTube iframe and virtual clock — so the deployed artefact's
+  behaviour is asserted, not a re-implementation of it. All 7 of the defects
+  above reproduce as failures against the 3.2.0 page.
+- 3 new detector tests (22 total); 95 vitest total, eslint clean, `vite build`
+  green.
+- The native end-detection logic was extracted verbatim and compiled and run on
+  a Linux Swift 5.10 toolchain: 6 checks fail on the 3.2.0 logic and all pass on
+  3.2.1. The full `TrailerPlayer.swift` is syntax-checked only — UIKit/WebKit
+  cannot be typechecked off a Mac, so CI remains the compile gate.
+
+## [3.2.0] — 2026-07-13
+
+Theater Mode, plus the fix for trailers being cut off at ~13 seconds.
+
+### Fixed
+- **Trailers stopped and skipped to the next one after about 13 seconds.**
+  Root cause: the native player's watchdog treated "no PLAYING event within
+  12 seconds" as a dead video. Several YouTube pre-roll ad variants keep the
+  *content* player in UNSTARTED while the ad runs — no PLAYING fires until the
+  ad finishes — so every trailer whose ad outlasted ~12s was skipped at
+  ~13s (12s watchdog + ~1s load). The v3.1.0 ad-end fix was working; the
+  watchdog was the remaining ad-blind path.
+  - `TrailerPlayer.swift`: the watchdog is now **liveness-based** — it skips
+    on a dead page (no proxy messages within 12s), a silent player (page
+    alive but YouTube never spoke within 20s), or a 75s hard cap; a live
+    page serving a long ad is never mistaken for a dead video. Dead video
+    IDs still skip instantly via the error event.
+  - `landing-page/api/embed.js`: the proxy now emits a **1s heartbeat**
+    (`{kind:'hb', state, t, d, yt, cc}`) so native can tell "alive, ad still
+    rolling" from "actually dead", and pins the content's duration from
+    `initialDelivery` metadata (`{kind:'meta', pin}`) before any ad plays.
+  - **Hardened end detection in all three mirrors** (`endDetection.js`,
+    proxy, Swift): the resume-confirm window is 5s until content playback is
+    *confirmed* (≥ 3s of observed forward progress on a clip matching the
+    pinned duration) then 1.2s, so slow ad-pod gaps can't fake an end; and
+    the "reached the end" fast-path now also requires content confirmation +
+    pin match, so a ≥ 32s unskippable ad ending at its own duration can't
+    either. 9 new unit tests (19 total on the detector).
+  - **Web:** the trailer-duration report to the backstop cycle timer could be
+    poisoned by an *ad's* duration (first PLAYING sample), hard-advancing at
+    ~13s on web too. `Player.web.jsx` now pins the content duration from
+    pre-playback metadata, feeds a 1s progress poll into the detector, and
+    only reports confirmed content durations; the backstop adds 45s of ad
+    headroom (`TrailerRoulette.jsx`) since its countdown ticks through ads.
+
+### Added
+- **Theater Mode — tune the roulette to a real independent theater.** A new
+  Theaters pill (top-left) opens a picker of Alamo Drafthouse's 23 metro
+  markets, searchable and sortable by distance ("Near me", one-shot location,
+  never stored). Pick one and the roulette spins ONLY that theater's live
+  "Now Showing" for the current month — new releases, repertory classics,
+  festival picks — with a "Now Showing · {market} · {month}" badge on every
+  card. "Everything" restores the classic all-of-cinema channel. The
+  two-button design is untouched.
+  - `src/lib/theaters.js` — theater directory (live market feed + static
+    fallback with coordinates), monthly lineup fetcher (sessions filtered to
+    the calendar month, deduped, sorted by programming weight), programming-
+    title cleanup ("Terror Tuesday: X", "(35mm)", "50th Anniversary" → the
+    actual film), conservative TMDB matching (exact-title + year-hint first;
+    unmatched films are *dropped, never faked*), 6h lineup cache. 17 tests.
+  - `src/components/TheaterSheet.jsx` — liquid-glass picker sheet.
+  - Queue integration: theater lineups are finite, so the reel reshuffles and
+    loops when exhausted (a lobby reel, not an endless feed); the selection
+    persists across launches (`SOURCE` storage key).
+  - `NSLocationWhenInUseUsageDescription` added for the optional "Near me"
+    sort (WKWebView geolocation; no plugin, no data retention).
+  - Adding more theaters (Eventive/Agile/Veezi venues) = one directory entry
+    + one lineup adapter. See `docs/THEATER-MODE.md`.
+
+### Deploy notes
+- **Redeploy the Vercel `landing-page`** (`scripts/06-deploy-vercel.ps1`) so
+  the proxy carries the heartbeat + pin. The new native build degrades
+  gracefully against a stale proxy (liveness falls back to ready/state
+  traffic and the 75s cap), but the heartbeat makes ad handling precise —
+  and the redeploy also improves ad handling for already-shipped builds.
+- Alamo's schedule API is public and CORS-permissive (verified 2026-07-13);
+  the app calls it directly from the device with a native-HTTP fallback. No
+  server of ours in the data path, nothing to keep warm.
+
 ## [3.1.0] — 2026-07-07
 
 Playback fix: trailers were cut off after ~15 seconds.

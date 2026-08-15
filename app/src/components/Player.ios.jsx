@@ -24,13 +24,32 @@ import * as haptics from '../lib/haptics.js';
  * advance the queue and auto-reopen for the new current. So the session stays
  * continuous either way — the in-place path is just the seamless optimization.
  * Tapping Done ends the session (no advance, no reopen).
+ *
+ * Two surfaces host this component and they need different chrome:
+ *   - the main roulette stage, where the bottom Play/AirPlay row is the app's
+ *     signature affordance, so the stage carries NO play button of its own
+ *     (`showPlayButton={false}`);
+ *   - the five fun modes, which have no such row. They start playback for the
+ *     user (each bumps playSignal), but if the native player is dismissed the
+ *     on-stage glass Play is the only way back in — so it stays on by default.
+ * Either way, the moment a play starts the stage becomes the progress
+ * indicator: spinner + caption over the movie's own artwork.
  */
+
+/** The artwork this movie shows on stage — and hands to the native player. */
+function stageArt(movie) {
+  return backdropUrl(movie?.backdrop_path) || posterUrl(movie?.poster_path) || '';
+}
+
 export default function PlayerIOS({
   trailer,
   nextTrailer,
   isPlaying,
   muted = false,
   playSignal,
+  // The host tells us whether it already provides a Play control. Default true
+  // so a surface that forgets keeps a way to start playing.
+  showPlayButton = true,
   onPlay,
   onPause,
   onEnded,
@@ -43,7 +62,9 @@ export default function PlayerIOS({
   const openingRef = useRef(false);   // true while the native modal is open
   const sessionRef = useRef(false);   // true once the user has started watching
   const [opening, setOpening] = useState(false);
-  const [error, setError] = useState(null);
+  // A flag, never a message: whatever the native layer throws (NSError text,
+  // WebKit navigation codes) is for the console, not for the stage.
+  const [failed, setFailed] = useState(false);
 
   // Latest callbacks without re-subscribing the native listener.
   const onAdvanceRef = useRef(onAdvanceInPlace);
@@ -56,10 +77,11 @@ export default function PlayerIOS({
   useEffect(() => { onMuteChangedRef.current = onMuteChanged; }, [onMuteChanged]);
 
   // Reset error when the trailer changes.
-  useEffect(() => { setError(null); }, [trailer?.youtubeKey]);
+  useEffect(() => { setFailed(false); }, [trailer?.youtubeKey]);
 
-  // A tap on the swipe card bumps playSignal — start playback (the card
-  // covers our own Play button, so taps are routed through here).
+  // The host's own Play control (the roulette's bottom pill, a mode's start
+  // button) bumps playSignal rather than calling in — one signal, so every
+  // surface starts playback the same way.
   useEffect(() => {
     if (!playSignal) return;
     if (openingRef.current || !trailer?.youtubeKey) return;
@@ -144,7 +166,7 @@ export default function PlayerIOS({
     if (!trailer?.youtubeKey || openingRef.current) return;
     haptics.medium();
     setOpening(true);
-    setError(null);
+    setFailed(false);
     sessionRef.current = true;
     openingRef.current = true;
     onPlay?.();
@@ -155,6 +177,11 @@ export default function PlayerIOS({
         muted: !!muted,
         nextYoutubeKey: nextTrailer?.youtubeKey || '',
         nextTitle: nextTrailer?.title || '',
+        // Hand the stage's own artwork to the native player so the modal
+        // dissolves onto this movie rather than onto 2-3s of black while the
+        // proxy page loads. Empty string is a silent no-op natively, so a
+        // movie with no art behaves exactly as before.
+        posterUrl: stageArt(trailer),
       });
       openingRef.current = false;
       onPause?.();
@@ -173,9 +200,10 @@ export default function PlayerIOS({
       onClosed?.(reason);
       onEnded?.({ unplayable, youtubeKey: result?.youtubeKey || trailer.youtubeKey, reason });
     } catch (e) {
-      const msg = e?.message || String(e);
+      // Diagnostics stay in the console (and in errorLog via the global
+      // handlers); the stage only ever says something a person can act on.
       console.warn('[PlayerIOS] openTrailer failed', e);
-      setError(`Couldn't open trailer: ${msg}`);
+      setFailed(true);
       openingRef.current = false;
       sessionRef.current = false;
       onPause?.();
@@ -188,15 +216,16 @@ export default function PlayerIOS({
     return (
       <div className="player player-empty" aria-busy="true">
         <div className="player-spinner" />
+        <p className="player-empty-caption" role="status">Finding a trailer…</p>
       </div>
     );
   }
 
-  const bg = backdropUrl(trailer.backdrop_path) || posterUrl(trailer.poster_path);
+  const bg = stageArt(trailer);
   const hasTrailer = Boolean(trailer.youtubeKey);
 
   return (
-    <div className="player player-ios">
+    <div className={`player player-ios${opening ? ' player-empty' : ''}`} aria-busy={opening || undefined}>
       {bg && (
         <div
           className="player-backdrop"
@@ -205,31 +234,47 @@ export default function PlayerIOS({
         />
       )}
 
-      <button
-        type="button"
-        className="player-play-button"
-        onClick={openTrailer}
-        disabled={!hasTrailer || opening}
-        aria-label={hasTrailer ? `Play ${trailer.title || 'trailer'}` : 'No trailer available'}
-      >
-        <svg className="play-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          {/* Centroid sits at the viewBox center (12,12), so flexbox centering =
-              true optical centering — no per-font margin nudging required. */}
-          <path d="M9 6v12l9-6z" fill="currentColor" />
-        </svg>
-        <span className="play-label">
-          {opening ? 'Opening…' : (hasTrailer ? 'Play trailer' : 'No trailer')}
-        </span>
-      </button>
-
-      {!hasTrailer && (
-        <p className="player-hint">Finding another…</p>
-      )}
-
-      {error && (
+      {/* One centre slot, three states — never two of them at once, so the
+          stage always says exactly one thing. */}
+      {failed ? (
         <div role="alert" className="player-error">
-          {error}
+          <div>Couldn&apos;t start this trailer.</div>
+          {/* The reason is in the console; the user gets a way out instead. */}
+          <button type="button" className="tr-pill" onClick={openTrailer}>
+            Try again
+          </button>
         </div>
+      ) : opening ? (
+        /* The one moment the app most needs to speak: the native modal takes
+           2-3s of network to appear, and before this the only cue was the
+           button dimming, so people re-tapped or assumed a hang. The stage
+           itself becomes the progress indicator — the app's own spinner over
+           the movie's artwork, captioned, announced. */
+        <>
+          <div className="player-spinner" aria-hidden="true" />
+          <p className="player-empty-caption" role="status">Opening trailer…</p>
+        </>
+      ) : showPlayButton ? (
+        <button
+          type="button"
+          className="player-play-button"
+          onClick={openTrailer}
+          disabled={!hasTrailer}
+          aria-label={hasTrailer ? `Play ${trailer.title || 'trailer'}` : 'No trailer available'}
+        >
+          <svg className="play-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            {/* Centroid sits at the viewBox center (12,12), so flexbox centering =
+                true optical centering — no per-font margin nudging required. */}
+            <path d="M9 6v12l9-6z" fill="currentColor" />
+          </svg>
+          <span className="play-label">
+            {hasTrailer ? 'Play trailer' : 'No trailer'}
+          </span>
+        </button>
+      ) : null}
+
+      {!hasTrailer && !opening && !failed && (
+        <p className="player-hint">Finding another…</p>
       )}
     </div>
   );

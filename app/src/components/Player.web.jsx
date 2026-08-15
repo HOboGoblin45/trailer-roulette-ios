@@ -14,8 +14,27 @@ import { createEndDetector } from '../lib/endDetection.js';
  * createEndDetector, which only reports a real end once playback reached the
  * video's true end (or stayed ended without an ad boundary resuming it).
  *
+ * Ad-hardened duration + progress (v3.2.0): during a pre-roll ad the IFrame
+ * API's getDuration()/getCurrentTime() describe the AD, not the trailer.
+ * v3.1.0 sampled the duration at the first PLAYING — i.e. the ad — and locked
+ * it in once per video, so the parent's backstop cycle timer could be set to
+ * the ad's ~12s length and hard-advance mid-trailer ("stops after ~13s").
+ * Now we:
+ *   - pin the content duration from metadata BEFORE playback starts
+ *     (onReady / pre-PLAYING poll samples), and feed a 1s progress poll into
+ *     the end detector (contentConfirmed, dual confirm windows, pinned
+ *     fast-path — see endDetection.js);
+ *   - only report a duration to the parent when it's the pinned metadata or
+ *     the detector has confirmed content is actually playing, latest value
+ *     wins — an ad's duration can no longer poison the backstop timer.
+ *
  * Falls back to a static iframe embed if the IFrame API can't load.
  */
+// How long after onReady a duration is still treated as the cued video's
+// metadata. A cued player reports its duration within a few hundred ms; past
+// this, anything new is an ad's.
+const PIN_WINDOW_MS = 2500;
+
 export default function PlayerWeb({
   trailer,
   isPlaying,
@@ -29,7 +48,9 @@ export default function PlayerWeb({
   const playerRef = useRef(null);
   const lastLoadedKeyRef = useRef(null);
   const detectorRef = useRef(null);
-  const durationKeyRef = useRef(null);
+  const pendingPinRef = useRef(true); // true until the current video's content duration is pinned
+  const pinDeadlineRef = useRef(0); // metadata must arrive by here, else run unpinned
+  const lastReportedDurationRef = useRef(0);
   const [apiReady, setApiReady] = useState(false);
   const [apiFailed, setApiFailed] = useState(false);
 
@@ -56,21 +77,55 @@ export default function PlayerWeb({
     const YT = window.YT;
     let destroyed = false;
     let player;
+    let pollTimer = null;
 
-    // Report the active video's real duration (once per key) so the parent's
-    // backstop cycle timer matches the trailer length instead of the 90s
-    // default — otherwise long trailers would be cut off at 90s.
-    const reportDuration = () => {
-      const p = playerRef.current;
-      if (!p) return;
+    const readPlayback = () => {
+      const pl = playerRef.current;
+      if (!pl) return null;
       try {
-        const d = p.getDuration?.();
-        const key = lastLoadedKeyRef.current;
-        if (d && Number.isFinite(d) && d > 0 && durationKeyRef.current !== key) {
-          durationKeyRef.current = key;
-          onDurationKnownRef.current?.(d);
+        const currentTime = pl.getCurrentTime?.();
+        const duration = pl.getDuration?.();
+        const state = pl.getPlayerState?.();
+        if (Number.isFinite(currentTime) && Number.isFinite(duration)) {
+          return { currentTime, duration, state };
         }
       } catch { /* noop */ }
+      return null;
+    };
+
+    // Report a trusted CONTENT duration (once per distinct value) so the
+    // parent's backstop cycle timer matches the trailer length instead of the
+    // 90s default — without ever trusting an ad's duration.
+    const reportTrustedDuration = (d) => {
+      if (!Number.isFinite(d) || d <= 0) return;
+      if (Math.abs(d - lastReportedDurationRef.current) <= 2) return;
+      lastReportedDurationRef.current = d;
+      onDurationKnownRef.current?.(d);
+    };
+
+    // Pin the content's duration from metadata BEFORE playback starts.
+    //
+    // v3.2.0 only refused to pin while the player reported PLAYING — but the
+    // ad variants behind this bug never report PLAYING, so a later poll could
+    // read the AD's duration and pin that as the content's. A wrong pin is
+    // worse than no pin: it makes the ad look like the trailer, which lets the
+    // ad's own end fast-path a false advance. So we also require an untouched
+    // playhead, and stop trying shortly after onReady — by then a cued video
+    // has long since reported its metadata, and anything still arriving is an
+    // ad's.
+    const tryPin = () => {
+      if (!pendingPinRef.current) return;
+      if (pinDeadlineRef.current && Date.now() > pinDeadlineRef.current) {
+        pendingPinRef.current = false; // metadata never arrived — run unpinned
+        return;
+      }
+      const p = readPlayback();
+      if (!p || !(p.duration > 0)) return;
+      if (p.state === PlayerState.PLAYING || p.state === PlayerState.BUFFERING) return;
+      if (!(p.currentTime <= 0.5)) return; // something has played — not metadata
+      pendingPinRef.current = false;
+      detectorRef.current?.setPinnedDuration(p.duration);
+      reportTrustedDuration(p.duration);
     };
 
     // Ad-aware end detection: ignore the spurious ENDED that fires when a
@@ -78,19 +133,26 @@ export default function PlayerWeb({
     const detector = createEndDetector({
       onEnd: () => onEndedRef.current?.(),
       getProgress: () => {
-        const pl = playerRef.current;
-        if (!pl) return null;
-        try {
-          const currentTime = pl.getCurrentTime?.();
-          const duration = pl.getDuration?.();
-          if (Number.isFinite(currentTime) && Number.isFinite(duration)) {
-            return { currentTime, duration };
-          }
-        } catch { /* noop */ }
-        return null;
+        const p = readPlayback();
+        return p ? { currentTime: p.currentTime, duration: p.duration } : null;
       },
     });
     detectorRef.current = detector;
+
+    // 1s playback poll: pins the duration when possible, feeds the detector's
+    // content-confirmation logic, and upgrades the parent's backstop timer the
+    // moment the real trailer is confirmed playing.
+    const startPoll = () => {
+      if (pollTimer) return;
+      pollTimer = setInterval(() => {
+        if (destroyed) return;
+        tryPin();
+        const p = readPlayback();
+        if (!p) return;
+        detector.onProgress(p.currentTime, p.duration);
+        if (detector.isContentConfirmed()) reportTrustedDuration(p.duration);
+      }, 1000);
+    };
 
     try {
       player = new YT.Player(containerRef.current, {
@@ -112,7 +174,9 @@ export default function PlayerWeb({
             if (destroyed) return;
             playerRef.current = e.target;
             lastLoadedKeyRef.current = trailer.youtubeKey;
-            reportDuration();
+            pinDeadlineRef.current = Date.now() + PIN_WINDOW_MS;
+            tryPin();
+            startPoll();
             onPlayRef.current?.();
           },
           onStateChange: (e) => {
@@ -120,7 +184,7 @@ export default function PlayerWeb({
             // Feed EVERY state to the ad-aware detector; it decides when a real
             // end happened and cancels itself when an ad boundary resumes.
             detector.onState(e.data);
-            if (e.data === PlayerState.PLAYING) { reportDuration(); onPlayRef.current?.(); }
+            if (e.data === PlayerState.PLAYING) { onPlayRef.current?.(); }
             else if (e.data === PlayerState.PAUSED) onPauseRef.current?.();
           },
           onError: (e) => {
@@ -140,12 +204,15 @@ export default function PlayerWeb({
     }
     return () => {
       destroyed = true;
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       try { detector.dispose(); } catch { /* noop */ }
       detectorRef.current = null;
       try { player?.destroy?.(); } catch { /* noop */ }
       playerRef.current = null;
       lastLoadedKeyRef.current = null;
-      durationKeyRef.current = null;
+      pendingPinRef.current = true;
+      pinDeadlineRef.current = 0;
+      lastReportedDurationRef.current = 0;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiReady, !!trailer?.youtubeKey]);
@@ -155,7 +222,10 @@ export default function PlayerWeb({
     if (!key || !playerRef.current) return;
     if (lastLoadedKeyRef.current === key) return;
     try {
-      detectorRef.current?.reset(); // drop any pending end from the previous video
+      detectorRef.current?.reset(); // drop pending end + pin from the previous video
+      pendingPinRef.current = true; // re-pin the new video's metadata duration
+      pinDeadlineRef.current = Date.now() + PIN_WINDOW_MS;
+      lastReportedDurationRef.current = 0;
       playerRef.current.loadVideoById(key);
       lastLoadedKeyRef.current = key;
     } catch { /* noop */ }

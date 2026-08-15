@@ -5,7 +5,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: var(--space-4);
   text-align: center;
 }
 
@@ -13,14 +13,6 @@
 .wheel-head {
   margin-top: 6px;
   max-width: 340px;
-}
-
-.wheel-title {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-  color: var(--fg);
 }
 
 .wheel-sub {
@@ -112,7 +104,7 @@
   width: 100%;
   max-width: 440px;
   aspect-ratio: 16 / 9;
-  border-radius: 14px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: #000;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
@@ -131,6 +123,12 @@
   align-items: center;
   gap: 14px;
   padding-bottom: 8px;
+  /* .wheel-result only appears in PHASE.RESULT, well over 100px taller than
+     the idle/fetching states (just a button, or a button plus one status
+     line) — that swap used to yank the button up and down the panel. A
+     floor sized for the result card keeps the other phases from feeling like
+     they collapsed. */
+  min-height: 240px;
 }
 
 .wheel-spin-btn {
@@ -140,7 +138,7 @@
   min-height: 56px;
   min-width: 200px;
   padding: 0 36px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   font-size: 20px;
   font-weight: 800;
   letter-spacing: 1.5px;
@@ -191,7 +189,7 @@
   background: rgba(255, 90, 90, 0.1);
   border: 1px solid rgba(255, 90, 90, 0.3);
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   max-width: 320px;
   line-height: 1.4;
 }
@@ -211,7 +209,7 @@
   max-width: 380px;
   text-align: left;
   padding: 12px;
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: var(--bg-2);
   border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
@@ -233,7 +231,7 @@
   width: 84px;
   height: 126px;
   object-fit: cover;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--bg-3);
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
 }
@@ -266,7 +264,7 @@
   color: #05121f;
   background: var(--gold);
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
 }
 
 .wheel-movie-title {
@@ -293,19 +291,34 @@
   background: var(--bg-3);
   border: 1px solid rgba(255, 255, 255, 0.06);
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
 }
 
 /* Respect reduced motion: skip the long spin animation feel. */
 @media (prefers-reduced-motion: reduce) {
+  /* This one isn't dead: it's !important with a real class selector, so it
+     legitimately outranks the global reduced-motion rule in styles/index.css
+     (also !important, but at zero specificity by design — see that file's
+     "Reduced motion" section). That's the sanctioned way to keep a literal
+     physical effect alive under reduced motion without touching the JSX:
+     the wheel still spins, just capped at a calmer 0.6s instead of the full
+     ~4.2s SPIN_MS. */
   .wheel-svg {
     transition-duration: 0.6s !important;
   }
   .wheel-result {
     animation: none;
   }
+  /* .wheel-spinnerdot used to try to slow to 1.4s here, but that's a plain
+     (non-important) override and the global rule's animation-duration is
+     !important, so it always won anyway — the "slow spin" never actually ran,
+     it silently froze instead. Freezing is fine for a loading dot, so this
+     now says so explicitly; if a genuine slowed spin is wanted instead,
+     RouletteWheel.jsx needs to add `motion-safe-exempt` to the
+     .wheel-spinnerdot element — CSS alone can't opt it out of the global
+     override. */
   .wheel-spinnerdot {
-    animation-duration: 1.4s;
+    animation: none;
   }
 }
 
@@ -315,7 +328,7 @@
   align-self: center;
   min-height: 44px;
   padding: 0 24px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   font-size: 15px;
   font-weight: 700;
   color: var(--fg);

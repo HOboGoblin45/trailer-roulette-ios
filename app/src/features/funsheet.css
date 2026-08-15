@@ -1,5 +1,17 @@
 /* FunSheet — Liquid Glass bottom sheet listing the fun modes.
-   Material + radii come from the tokens in styles/index.css. */
+   Material + radii come from the tokens in styles/index.css.
+
+   This file is also the home of the SHARED fun-mode chrome: `.feat-title`,
+   `.feat-enter` and the panel focus rules. It is loaded on every mode path
+   (App -> TrailerRoulette statically imports FunSheet.jsx *and* the six modes),
+   so one definition serves all six instead of six copies drifting apart.
+
+   CASCADE NOTE — read before adding anything that contends with the core sheet.
+   main.jsx imports App.jsx *before* styles/index.css, so Rollup emits the
+   feature stylesheets FIRST and styles/index.css LAST. The core sheet therefore
+   wins every same-specificity tie (this is why .cinema-root has to say
+   `padding: 0 !important`). Never rely on source order to beat a core rule —
+   out-specify it, or the rule will silently do nothing in the bundle. */
 
 .fun-backdrop {
   position: fixed; inset: 0; z-index: 25;
@@ -10,6 +22,17 @@
   animation: funFade 0.22s ease both;
 }
 @keyframes funFade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Dismissal. Both halves leave together on the shared exit curve. This has to
+   be an ANIMATION, not a transition: the entrance below fills `both`, and an
+   animation's held final frame outranks any transition or plain declaration,
+   so a `transform: translateY(100%)` transition would never move. Replacing
+   the animation-name is the only thing funUp/funFade will yield to. */
+.fun-backdrop.is-closing {
+  animation: funFadeOut var(--exit-ms) var(--exit-ease) both;
+  pointer-events: none;   /* a leaving backdrop must not take a second tap */
+}
+@keyframes funFadeOut { from { opacity: 1; } to { opacity: 0; } }
 
 .fun-sheet {
   width: 100%; box-sizing: border-box;
@@ -28,7 +51,20 @@
 }
 @keyframes funUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
+/* Deliberately UNSCOPED. `.fun-sheet` is the shared bottom-sheet shell —
+   FunSheet.jsx and components/TheaterSheet.jsx both wear it, and both are being
+   wired to the same `.is-closing` contract. Scoping this to `.fun-backdrop`
+   would have made the exit a FunSheet-only feature that TheaterSheet silently
+   did not get. Same contract, one rule. */
+.fun-sheet.is-closing {
+  animation: funDown var(--exit-ms) var(--exit-ease) both;
+  pointer-events: none;
+}
+@keyframes funDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
+
 .fun-handle {
+  /* 3px on a 5px-tall grabber: no radius token applies at this size — --radius-sm
+     (10px) exceeds the element's own height. Left as a literal on purpose. */
   width: 36px; height: 5px; border-radius: 3px;
   background: rgba(255, 255, 255, 0.28);
   margin: 6px auto 14px;
@@ -48,14 +84,14 @@
   border: 1px solid var(--hairline);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   color: var(--fg);
-  transition: transform 0.14s var(--press), background 0.16s ease;
+  transition: transform 0.14s var(--press), background 0.16s var(--press);
 }
 .fun-item:active { transform: scale(0.97); background: rgba(255, 255, 255, 0.12); }
 
 /* Letter-monogram tile (no emojis, ever). */
 .fun-emoji {
   display: flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: 11px;
+  width: 34px; height: 34px; border-radius: var(--radius-sm);
   background: rgba(61, 165, 244, 0.16);
   color: var(--accent);
   font-size: 16px; font-weight: 800; line-height: 1;
@@ -72,6 +108,89 @@
   border: 1px solid var(--glass-border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   color: var(--fg); font-size: 16px; font-weight: 700; cursor: pointer;
-  transition: transform 0.14s var(--press), background 0.16s ease;
+  transition: transform 0.14s var(--press), background 0.16s var(--press);
 }
 .fun-close:active { transform: scale(0.98); background: rgba(255, 255, 255, 0.15); }
+
+/* ─────────────────── Shared: panel focus (all six modes + sheet) ────────────
+   The panel roots now carry tabIndex={-1} and are focused programmatically on
+   open (useOverlay). A stray ring on every open would read as a rendering bug,
+   but a keyboard user who lands on the root — which happens when the panel has
+   no focusable children — still needs to see where they are.
+
+   Specificity matters here: the core sheet's focus rules are wrapped in
+   :where() at zero specificity, so these (0,1,1) win no matter which sheet the
+   bundler emits last. The ring is inset because both roots are edge-anchored —
+   .feat is fixed inset:0 and .fun-sheet sits flush on the bottom edge, so a
+   positive outline-offset would paint off-screen. */
+.feat:focus,
+.fun-sheet:focus { outline: none; }
+
+.feat:focus-visible,
+.fun-sheet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+
+/* ─────────────────── Shared: mode identity line ────────────────────────────
+   The single always-present mode name, an <h1> in all six modes. Quiet eyebrow
+   treatment so it identifies the panel without competing with the mode's own
+   content — every mode already carries its real headline below this. */
+.feat-title {
+  margin: 0;
+  /* Clearance for .feat-close: a 40px control inset 14px from the panel's
+     top-right eats ~54px of that corner. The handoff asked for a 52px
+     padding-right; the pad is MIRRORED because five of the six modes centre
+     this line (their roots are align-items:center, or it sits inside a centred
+     head block), and a one-sided pad would shift the text 26px off centre.
+     Symmetric padding buys the same clearance and stays optically centred.
+     Cinema opts out — see .cinema-top .feat-title, which is left-aligned in a
+     container that already reserves 64px on the right. */
+  padding: 0 52px;
+  max-width: 100%;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  overflow-wrap: break-word;
+}
+
+/* 320-359pt: 104px of horizontal padding is a third of the content box on the
+   smallest phones. 44px still clears the close button (which intrudes ~38px
+   past .feat's own gutter) and gives short mode names room to stay on one line. */
+@media (max-width: 359px) {
+  .feat-title { padding: 0 44px; }
+}
+
+/* ─────────────────── Shared: stage enter transition ────────────────────────
+   One pair for every mode that swaps a stage: BlindDate (loading/error/mystery/
+   playing), GuessYear (.year-center/.year-watch/.year-guesser), RouletteWheel
+   (.wheel-result) and TimeMachine (.time-intro phases + .time-stage).
+
+   Deliberately a TRANSITION and not a keyframe animation: useStageEnter()
+   paints the out-state for two frames and then adds .is-in, so a transition is
+   sufficient — and an animation on top would fight the modes that also animate
+   their own children in. `.blind-reveal` and `.year-reveal` keep their own
+   bespoke entrances and never carry this class. */
+.feat-enter {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 220ms var(--spring), transform 220ms var(--spring);
+}
+.feat-enter.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Land in the finished state rather than transitioning to it. The core sheet
+     already collapses the duration, which alone would leave the panel invisible
+     for the two frames useStageEnter() holds before adding .is-in; neutralising
+     the out-state removes that flash entirely. opacity/transform are not in the
+     core reset's property list, so plain declarations are enough here. */
+  .feat-enter {
+    opacity: 1;
+    transform: none;
+  }
+}

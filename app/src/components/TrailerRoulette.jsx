@@ -2,18 +2,27 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import Player from './Player.jsx';
 import AboutScreen from './AboutScreen.jsx';
+import TheaterSheet from './TheaterSheet.jsx';
 import FunSheet from '../features/FunSheet.jsx';
 import { FEATURES } from '../features/index.js';
 import {
   discoverMovies, discoverRandomMix, getTrailer, pickDiscoverPage,
   toTrailerCandidate, genreNames, backdropUrl, posterUrl,
 } from '../lib/tmdb.js';
+import { getTheaterQueue, monthLabel } from '../lib/theaters.js';
 import { uniformShuffle } from '../lib/shuffleWeighting.js';
+import * as storage from '../lib/storage.js';
 import * as airplay from '../lib/airplay.js';
 import * as haptics from '../lib/haptics.js';
 
 const MAX_TRAILER_SECONDS = 180;
 const DEFAULT_CYCLE_SECONDS = 90;
+// The web cycle timer is a BACKSTOP, not the advance mechanism — the ad-aware
+// end detector advances at the real end. The countdown ticks through pre-roll
+// ad time too (content hasn't started yet), so the backstop must leave
+// headroom for ads or it would cut the trailer short (v3.1.0 cut trailers at
+// ad-length seconds when the ad's duration poisoned this timer).
+const AD_ALLOWANCE_SECONDS = 45;
 const PREFETCH_LOOKAHEAD = 3;
 
 // 1987 → "1980s". A small, fun reminder that the feed spans every decade.
@@ -30,6 +39,12 @@ function decadeLabel(year) {
  * it on the TV). No filters, no accounts, no algorithm — just press play and
  * see what comes up. Trailers auto-advance, so it also runs as a hands-free
  * channel you can leave going.
+ *
+ * Theater Mode (v3.2.0): tune the channel to an independent theater. Pick a
+ * theater (sorted by distance if you allow location) and the roulette spins
+ * ONLY what that theater is showing this month — its real, live programme:
+ * new releases, repertory classics, festival picks. "Everything" restores the
+ * classic all-of-cinema channel. The two-button design is untouched.
  */
 export default function TrailerRoulette() {
   const [queue, setQueue] = useState([]);
@@ -38,12 +53,14 @@ export default function TrailerRoulette() {
   const [cycleSeconds, setCycleSeconds] = useState(DEFAULT_CYCLE_SECONDS);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const [loadError, setLoadError] = useState(null);
+  const [loadError, setLoadError] = useState(false); // flag only — see loadQueue
   const [retrying, setRetrying] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [playSignal, setPlaySignal] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeFeature, setActiveFeature] = useState(null);
+  const [source, setSource] = useState(null); // null = Everything; { marketSlug, marketName } = Theater Mode
+  const [theaterOpen, setTheaterOpen] = useState(false);
 
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
@@ -51,26 +68,44 @@ export default function TrailerRoulette() {
   const retryRef = useRef({ timer: null, attempt: 0 });
   const toppingRef = useRef(false);
   const loadQueueRef = useRef(null);
+  const sourceRef = useRef(null); // mirrors `source` for use inside stable callbacks
 
-  // Build an era-diverse batch (old + mid + recent), then shuffle uniformly so
-  // the order is pure random across every decade. Falls back to a plain deep-page
-  // pull if the mix comes back thin.
+  // Build the queue for the active source.
+  //  - Everything: an era-diverse random batch (old + mid + recent), shuffled
+  //    uniformly. Falls back to a plain deep-page pull if the mix comes thin.
+  //  - Theater: the selected theater's live "Now Showing" for this month,
+  //    matched to TMDB and shuffled. Finite by nature, so when it runs dry we
+  //    reshuffle and loop — a cinema lobby reel, not an endless feed.
   const loadQueue = useCallback(async ({ append = false } = {}) => {
     try {
-      if (!append) setLoadError(null);
-      let results = await discoverRandomMix();
-      if (!results || results.length < 8) {
-        const data = await discoverMovies({ era: 'all', page: pickDiscoverPage(500) });
-        results = [...(results || []), ...(data.results || [])];
+      if (!append) setLoadError(false);
+      const src = sourceRef.current;
+      let candidates;
+      if (src?.marketSlug) {
+        candidates = await getTheaterQueue(src.marketSlug);
+      } else {
+        let results = await discoverRandomMix();
+        if (!results || results.length < 8) {
+          const data = await discoverMovies({ era: 'all', page: pickDiscoverPage(500) });
+          results = [...(results || []), ...(data.results || [])];
+        }
+        candidates = results.map(toTrailerCandidate);
       }
-      const ordered = uniformShuffle(results.map(toTrailerCandidate));
+      const ordered = uniformShuffle(candidates);
       retryRef.current.attempt = 0;
       clearTimeout(retryRef.current.timer);
 
       if (append) {
         setQueue((q) => {
           const have = new Set(q.map((m) => m.id));
-          return [...q, ...ordered.filter((m) => !have.has(m.id))];
+          let fresh = ordered.filter((m) => !have.has(m.id));
+          if (!fresh.length && src?.marketSlug) {
+            // Theater lineups are finite — loop the reel (skip an immediate
+            // repeat of the tail so back-to-back duplicates can't happen).
+            const tailId = q[q.length - 1]?.id;
+            fresh = uniformShuffle(candidates.filter((m) => m.id !== tailId));
+          }
+          return [...q, ...fresh];
         });
       } else {
         prefetchedRef.current = new Set();
@@ -79,7 +114,9 @@ export default function TrailerRoulette() {
       }
     } catch (err) {
       console.error('[TrailerRoulette] loadQueue failed', err);
-      if (!append) setLoadError(err?.message || String(err));
+      // A flag, not the message: `err` is whatever TMDB, the network stack or
+      // a parser threw, and the banner is the first thing a new user may see.
+      if (!append) setLoadError(true);
       // Self-heal: retry with capped exponential backoff so the feed comes back
       // on its own the moment the network does — no user action needed.
       const attempt = Math.min(retryRef.current.attempt + 1, 6);
@@ -101,11 +138,42 @@ export default function TrailerRoulette() {
     loadQueue({ append: true }).finally(() => { toppingRef.current = false; });
   }, [queue.length, current, loadQueue]);
 
-  // Boot.
+  // Boot: restore the saved source (theater or Everything), then load.
   useEffect(() => {
-    loadQueue();
+    (async () => {
+      try {
+        const saved = await storage.get(storage.KEYS.SOURCE);
+        if (saved?.marketSlug) {
+          sourceRef.current = saved;
+          setSource(saved);
+        }
+      } catch { /* default to Everything */ }
+      loadQueue();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Switch source (theater picked, or back to Everything) and rebuild the
+  // queue from scratch. Persisted so the app reopens on the same channel.
+  const onPickSource = useCallback((picked) => {
+    setTheaterOpen(false);
+    const next = picked?.marketSlug ? picked : null;
+    const prev = sourceRef.current;
+    if ((next?.marketSlug || null) === (prev?.marketSlug || null)) return;
+    sourceRef.current = next;
+    setSource(next);
+    (async () => {
+      try {
+        if (next) await storage.set(storage.KEYS.SOURCE, next);
+        else await storage.remove(storage.KEYS.SOURCE);
+      } catch { /* persistence is best-effort */ }
+    })();
+    setIsPlaying(false); // ends any native session; Play starts the new channel
+    setCurrent(null);
+    setQueue([]);
+    prefetchedRef.current = new Set();
+    loadQueue();
+  }, [loadQueue]);
 
   const handleRetry = useCallback(async () => {
     setRetrying(true);
@@ -227,7 +295,11 @@ export default function TrailerRoulette() {
 
   const onTrailerDurationKnown = useCallback((duration) => {
     if (!Number.isFinite(duration) || duration <= 0) return;
-    const s = Math.min(Math.ceil(duration), MAX_TRAILER_SECONDS);
+    // Trusted content duration (the player never reports an ad's duration
+    // since v3.2.0) + ad headroom, so the backstop can't fire mid-trailer
+    // while a pre-roll ad is eating wall-clock time. Latest report wins —
+    // the player refines the value once real playback is confirmed.
+    const s = Math.min(Math.ceil(duration), MAX_TRAILER_SECONDS) + AD_ALLOWANCE_SECONDS;
     setCycleSeconds(s);
     setSecondsLeft(s);
   }, []);
@@ -271,11 +343,23 @@ export default function TrailerRoulette() {
 
       {!activeFeature && (
         <div className="player-wrap">
+          {/* ONE Play affordance on this screen: the bottom pill below.
+              The player used to render its own 88px on-stage Play as well —
+              two controls doing the same job, the smaller of which sat right
+              on top of the artwork. The pill is the app's identity (Play +
+              AirPlay, the two-button thesis), it is bigger, it is where the
+              thumb already is, and it is the only one that can also spin to a
+              fresh trailer. So the stage keeps no button and is free to show
+              state instead: artwork, then spinner + caption while the native
+              player opens. The fun modes have no pill, so they keep the
+              on-stage button (Player.ios.jsx defaults showPlayButton to true).
+              Both routes start playback through the same playSignal bump. */}
           <Player
             trailer={current}
             nextTrailer={queue[1]}
             isPlaying={isPlaying}
             playSignal={playSignal}
+            showPlayButton={false}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={onTrailerEnded}
@@ -286,8 +370,26 @@ export default function TrailerRoulette() {
         </div>
       )}
 
-      {/* Top-right: labeled Modes pill (the fun-modes menu) + info button. */}
+      {/* Top bar. Left: the Theater pill (Theater Mode entry point — shows
+          the tuned theater's name). Right: Modes pill + info button. */}
       <div className="tr-topbar">
+        <div className="tr-topbar-left">
+          <button
+            className={`tr-pill tr-pill-theater${source ? ' is-tuned' : ''}`}
+            onClick={() => { haptics.light(); setTheaterOpen(true); }}
+            aria-label={source ? `Theater: ${source.marketName}. Change theater` : 'Pick a theater'}
+          >
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {/* Film-strip glyph */}
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <line x1="7" y1="4" x2="7" y2="20" />
+              <line x1="17" y1="4" x2="17" y2="20" />
+              <line x1="3" y1="9" x2="7" y2="9" /><line x1="3" y1="15" x2="7" y2="15" />
+              <line x1="17" y1="9" x2="21" y2="9" /><line x1="17" y1="15" x2="21" y2="15" />
+            </svg>
+            <span className="tr-pill-theater-label">{source ? source.marketName : 'Theaters'}</span>
+          </button>
+        </div>
         <div className="tr-topbar-right">
           <button className="tr-pill" onClick={() => { haptics.light(); setMenuOpen(true); }} aria-label="Open fun modes">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -303,11 +405,17 @@ export default function TrailerRoulette() {
         </div>
       </div>
 
-      {/* Minimal now-playing: title, year, a genre + decade badge. */}
+      {/* Minimal now-playing: title, year, a genre + decade badge — plus the
+          live "Now Showing" badge when the channel is tuned to a theater. */}
       {current && (
         <div className="tr-cardinfo" key={current.id}>
           <h2>{current.title}{current.year ? <span className="tr-year"> {current.year}</span> : null}</h2>
           <div className="tr-badges">
+            {source ? (
+              <span className="tr-badge tr-badge-live">
+                Now Showing · {source.marketName} · {monthLabel()}
+              </span>
+            ) : null}
             {genreNames(current.genre_ids).slice(0, 2).map((g) => (
               <span className="tr-badge" key={g}>{g}</span>
             ))}
@@ -339,16 +447,26 @@ export default function TrailerRoulette() {
       </div>
 
       {loadError && (
-        <div className="tmdb-error-banner">
+        <div className="tmdb-error-banner" role="alert">
           <div><strong>Couldn&apos;t load trailers.</strong></div>
-          <div style={{ fontSize: 12, opacity: 0.85 }}>{loadError}</div>
+          {/* Fixed copy: the raw failure (TMDB body text, DNS errors, HTTP
+              codes) went to the console in loadQueue. What the user needs is
+              the cause they can act on and the fact that we keep trying. */}
+          <div>Check your connection — the channel comes back on its own once you are online.</div>
           <button onClick={handleRetry} disabled={retrying}>
             {retrying ? 'Retrying…' : 'Try again'}
           </button>
         </div>
       )}
 
-      {showAbout && <AboutScreen onClose={() => setShowAbout(false)} />}
+      <AboutScreen open={showAbout} onClose={() => setShowAbout(false)} />
+
+      <TheaterSheet
+        open={theaterOpen}
+        current={source}
+        onPick={onPickSource}
+        onClose={() => setTheaterOpen(false)}
+      />
 
       <FunSheet
         open={menuOpen}

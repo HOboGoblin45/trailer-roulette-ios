@@ -4,6 +4,7 @@ import { discoverRandomMix, getTrailer, toTrailerCandidate, genreNames } from '.
 import * as airplay from '../lib/airplay.js';
 import Player from '../components/Player.jsx';
 import * as haptics from '../lib/haptics.js';
+import { useOverlay } from './overlay.js';
 
 /**
  * Cinema Mode — a hands-free, muted-by-default "lean-back" channel built for
@@ -18,15 +19,22 @@ import * as haptics from '../lib/haptics.js';
  *    channel keeps playing.
  *  - Chrome (title pill + bottom controls) auto-hides after ~4s of no
  *    interaction and reappears on tap anywhere.
+ *  - If the feed keeps failing with nothing on screen we stop the silent retry
+ *    loop and say so, because the alternative is an endless "Tuning the
+ *    channel…" spinner under chrome that has already faded itself away.
  */
 
+const TITLE = 'Cinema Mode';
 const HIDE_DELAY_MS = 4000;       // idle time before chrome fades
 const QUEUE_LOW_WATER = 3;        // refill when fewer than this remain queued
 const QUEUE_TARGET = 6;           // stop pulling batches once we have this many
 const RETRY_DELAY_MS = 2500;      // backoff after a failed/empty fetch
 const MAX_RESOLVE_PER_BATCH = 12; // cap trailer lookups per batch (latency guard)
+const MAX_CONSECUTIVE_FAILURES = 3; // then surface the error instead of retrying forever
+const SEEN_ID_CAP = 400;          // forget old ids so a long session can't starve
 
 export default function CinemaMode({ onClose }) {
+  const { closing, close, dialogProps } = useOverlay({ onClose, label: TITLE });
   // --- playback state ---
   const [current, setCurrent] = useState(null);   // movie w/ .youtubeKey
   const [next, setNext] = useState(null);         // prefetched next movie
@@ -44,6 +52,10 @@ export default function CinemaMode({ onClose }) {
   const nextRef = useRef(null);
   const hideTimerRef = useRef(null);
   const retryTimerRef = useRef(null);
+  // Consecutive fetches that produced nothing playable. Mirrors the jumpsRef
+  // guard in TimeMachine: without it a sustained TMDB outage left the user
+  // watching a spinner forever, with the close button faded out behind it.
+  const failuresRef = useRef(0);
 
   useEffect(() => {
     currentRef.current = current;
@@ -60,6 +72,11 @@ export default function CinemaMode({ onClose }) {
     try {
       const raw = await discoverRandomMix();
       if (!mountedRef.current) return;
+
+      // A long channel eventually marks every popular title as seen, which
+      // looks exactly like an outage (empty batch after empty batch). Forget
+      // the oldest ids instead so the channel can keep running all night.
+      if (seenIdsRef.current.size > SEEN_ID_CAP) seenIdsRef.current.clear();
 
       // Shuffle so the era-banded batch doesn't always play oldest-first.
       const candidates = (raw || [])
@@ -92,14 +109,28 @@ export default function CinemaMode({ onClose }) {
       if (added === 0) {
         // Nothing playable surfaced — back off briefly, then try again so the
         // channel still comes alive without hammering the API.
-        scheduleRetry();
+        noteFailure();
+      } else {
+        failuresRef.current = 0;
       }
     } catch {
-      if (mountedRef.current) scheduleRetry();
+      if (mountedRef.current) noteFailure();
     } finally {
       fetchingRef.current = false;
       if (mountedRef.current) primeFromQueue();
     }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One failed attempt. We keep retrying quietly while something is on screen
+  // (a background refill failing is not the user's problem), but with a blank
+  // stage we give up after a few tries and hand them a button.
+  const noteFailure = useCallback(() => {
+    failuresRef.current += 1;
+    if (failuresRef.current >= MAX_CONSECUTIVE_FAILURES && !currentRef.current) {
+      setStatus('error');
+      return;
+    }
+    scheduleRetry();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scheduleRetry = useCallback(() => {
@@ -171,10 +202,19 @@ export default function CinemaMode({ onClose }) {
   }, [fillQueue]);
 
   // ----- Auto-hiding chrome -----
+  // While the error state is up the chrome must stay awake: the close button
+  // rides with it, and a faded close button on top of a dead channel is how
+  // this mode used to trap people.
+  const strandedRef = useRef(false);
+  useEffect(() => {
+    strandedRef.current = status === 'error';
+    if (status === 'error') setChromeVisible(true);
+  }, [status]);
+
   const scheduleHide = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
-      if (mountedRef.current) setChromeVisible(false);
+      if (mountedRef.current && !strandedRef.current) setChromeVisible(false);
     }, HIDE_DELAY_MS);
   }, []);
 
@@ -192,15 +232,9 @@ export default function CinemaMode({ onClose }) {
   }, [chromeVisible, scheduleHide, current]);
 
   // ----- Control handlers -----
-  const handleTapStage = useCallback(() => {
-    // Tapping the stage toggles chrome: if hidden, reveal; if shown, keep alive.
-    if (!chromeVisible) {
-      setChromeVisible(true);
-      scheduleHide();
-    } else {
-      scheduleHide();
-    }
-  }, [chromeVisible, scheduleHide]);
+  // Tapping the stage reveals the chrome if it has faded, and in either case
+  // restarts the idle countdown.
+  const handleTapStage = wakeChrome;
 
   const handleNext = useCallback(() => {
     haptics.medium();
@@ -224,10 +258,24 @@ export default function CinemaMode({ onClose }) {
     }
   }, [wakeChrome]);
 
+  // Manual recovery from the error state: forget the failure streak, drop any
+  // pending backoff and go again from a clean slate.
+  const handleRetry = useCallback(() => {
+    haptics.light();
+    wakeChrome();
+    failuresRef.current = 0;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    setStatus('loading');
+    fillQueue();
+  }, [fillQueue, wakeChrome]);
+
   const handleClose = useCallback(() => {
     haptics.light();
-    onClose && onClose();
-  }, [onClose]);
+    close();
+  }, [close]);
 
   // ----- Derived display values -----
   const title = current?.title || '';
@@ -236,8 +284,18 @@ export default function CinemaMode({ onClose }) {
   const primaryGenre = genres[0] || null;
 
   return (
-    <div className={`feat feat-cinema cinema-root ${chromeVisible ? 'cinema-awake' : 'cinema-asleep'}`}>
-      <button className="feat-close cinema-close" onClick={handleClose} aria-label="Close">✕</button>
+    <div
+      className={`feat feat-cinema cinema-root ${chromeVisible ? 'cinema-awake' : 'cinema-asleep'}${closing ? ' is-closing' : ''}`}
+      {...dialogProps}
+    >
+      <button
+        type="button"
+        className="feat-close cinema-close"
+        onClick={handleClose}
+        aria-label="Close"
+      >
+        ✕
+      </button>
 
       {/* Full-bleed video stage. The tap layer wakes/holds the chrome. */}
       <div className="cinema-stage">
@@ -277,21 +335,33 @@ export default function CinemaMode({ onClose }) {
         ) : null}
 
         {status === 'error' && !current ? (
-          <div className="cinema-loading" role="status" aria-live="polite">
-            <div className="cinema-loading-text">Reconnecting…</div>
+          <div className="cinema-loading cinema-error" role="alert">
+            <div className="cinema-error-title">No signal</div>
+            <div className="cinema-loading-text">
+              The trailer feed isn&apos;t answering. Check your connection.
+            </div>
+            <button type="button" className="cinema-retry" onClick={handleRetry}>
+              Try again
+            </button>
           </div>
         ) : null}
 
-        {/* ===== Top chrome: LIVE pill + now-playing title ===== */}
+        {/* ===== Top chrome: mode name + LIVE pill + now-playing title ===== */}
         <div className="cinema-top">
-          <div className="cinema-pill">
-            <span className="cinema-dot" aria-hidden="true" />
-            <span className="cinema-pill-label">LIVE</span>
-          </div>
+          <h1 className="feat-title">{TITLE}</h1>
+          {/* A pulsing LIVE badge over a channel that has just told the user it
+              has no signal is the one place this mode can lie. */}
+          {status !== 'error' ? (
+            <div className="cinema-pill">
+              <span className="cinema-dot" aria-hidden="true" />
+              <span className="cinema-pill-label">LIVE</span>
+            </div>
+          ) : null}
           {title ? (
             <div className="cinema-nowplaying">
               <span className="cinema-eyebrow">NOW PLAYING</span>
-              <h1 className="cinema-title" title={title}>{title}</h1>
+              {/* h2: the mode name above is this panel's h1. */}
+              <h2 className="cinema-title" title={title}>{title}</h2>
               <div className="cinema-meta">
                 {year ? <span className="cinema-year">{year}</span> : null}
                 {year && primaryGenre ? <span className="cinema-sep" aria-hidden="true">•</span> : null}

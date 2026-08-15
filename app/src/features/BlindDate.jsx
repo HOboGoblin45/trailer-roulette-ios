@@ -9,7 +9,10 @@ import {
 } from '../lib/tmdb.js';
 import Player from '../components/Player.jsx';
 import * as haptics from '../lib/haptics.js';
+import { useOverlay, useStageEnter } from './overlay.js';
 import './blind-date.css';
+
+const TITLE = 'Blind Date';
 
 // Stages of a single blind date.
 const STAGE = {
@@ -46,11 +49,14 @@ function pickLine(list) {
 }
 
 export default function BlindDate({ onClose }) {
+  const { closing, close, dialogProps } = useOverlay({ onClose, label: TITLE });
   const [stage, setStage] = useState(STAGE.LOADING);
   const [movie, setMovie] = useState(null);      // candidate with youtubeKey set
   const [playSignal, setPlaySignal] = useState(0);
   const [verdict, setVerdict] = useState(null);  // { kind: 'into'|'pass', line }
-  const [revealShown, setRevealShown] = useState(false); // drives the reveal animation
+  // Every stage swap (not just the reveal) paints in its "out" state and then
+  // transitions in, so the card never jump-cuts between beats.
+  const entered = useStageEnter(stage);
 
   // Track which movies we've already shown so "Next" never repeats one.
   const usedIds = useRef(new Set());
@@ -70,7 +76,6 @@ export default function BlindDate({ onClose }) {
   const findPlayableMovie = useCallback(async () => {
     const myToken = ++fetchToken.current;
     setVerdict(null);
-    setRevealShown(false);
     setMovie(null);
     setStage(STAGE.LOADING);
 
@@ -137,11 +142,9 @@ export default function BlindDate({ onClose }) {
 
   const goReveal = useCallback(() => {
     haptics.heavy();
+    // The "in" class is deferred a frame by useStageEnter, so the CSS
+    // transition on .blind-reveal actually runs.
     setStage(STAGE.REVEAL);
-    // Defer the "in" class one frame so the CSS transition actually runs.
-    requestAnimationFrame(() => {
-      if (alive.current) setRevealShown(true);
-    });
   }, []);
 
   const castVerdict = useCallback((kind) => {
@@ -158,10 +161,13 @@ export default function BlindDate({ onClose }) {
   }, [findPlayableMovie]);
 
   const backdrop = movie ? backdropUrl(movie.backdrop_path) : null;
+  const enter = `feat-enter${entered ? ' is-in' : ''}`;
 
   return (
-    <div className="feat feat-blind">
-      <button className="feat-close" onClick={onClose} aria-label="Close">✕</button>
+    <div className={`feat feat-blind${closing ? ' is-closing' : ''}`} {...dialogProps}>
+      <button type="button" className="feat-close" onClick={close} aria-label="Close">✕</button>
+
+      <h1 className="feat-title">{TITLE}</h1>
 
       {/* Heavily blurred/darkened backdrop behind the mystery — nothing readable. */}
       {(stage === STAGE.MYSTERY || stage === STAGE.PLAYING) && backdrop && (
@@ -174,7 +180,7 @@ export default function BlindDate({ onClose }) {
 
       <div className="blind-stage">
         {stage === STAGE.LOADING && (
-          <div className="blind-card blind-loading">
+          <div className={`blind-card blind-loading ${enter}`} role="status" aria-live="polite">
             <div className="blind-spinner" aria-hidden="true" />
             <p className="blind-loading-text">Setting up your blind date…</p>
             <p className="blind-sub">Finding a mystery worth your time.</p>
@@ -182,26 +188,25 @@ export default function BlindDate({ onClose }) {
         )}
 
         {stage === STAGE.ERROR && (
-          <div className="blind-card blind-error">
+          <div className={`blind-card blind-error ${enter}`} role="alert">
             <h2 className="blind-title">No match right now</h2>
             <p className="blind-sub">
               Couldn&apos;t line up a trailer. The projector might be jammed — give it
               another spin.
             </p>
-            <button className="blind-btn blind-btn-primary" onClick={nextDate}>
+            <button type="button" className="blind-btn blind-btn-primary" onClick={nextDate}>
               Try again
             </button>
           </div>
         )}
 
         {stage === STAGE.MYSTERY && (
-          <div className="blind-card blind-mystery">
+          <div className={`blind-card blind-mystery ${enter}`}>
             <div className="blind-mask" aria-hidden="true">
               <span className="blind-q">?</span>
               <span className="blind-q blind-q-2">?</span>
               <span className="blind-q blind-q-3">?</span>
             </div>
-            <div className="blind-kicker">Blind Date</div>
             <h2 className="blind-title">Judge a movie by its trailer alone.</h2>
             <p className="blind-sub">No title. No poster. No spoilers.</p>
 
@@ -211,17 +216,21 @@ export default function BlindDate({ onClose }) {
               <span className="blind-redact" style={{ width: '78%' }} />
             </div>
 
-            <button className="blind-btn blind-btn-primary blind-play" onClick={startTrailer}>
+            <button
+              type="button"
+              className="blind-btn blind-btn-primary blind-play"
+              onClick={startTrailer}
+            >
               ▶ Play the trailer
             </button>
-            <button className="blind-btn blind-btn-ghost" onClick={nextDate}>
+            <button type="button" className="blind-btn blind-btn-ghost" onClick={nextDate}>
               Shuffle a different mystery
             </button>
           </div>
         )}
 
         {stage === STAGE.PLAYING && movie && (
-          <div className="blind-player-wrap">
+          <div className={`blind-player-wrap ${enter}`}>
             <div className="blind-player-box">
               <Player
                 trailer={movie}
@@ -232,7 +241,11 @@ export default function BlindDate({ onClose }) {
               />
             </div>
             <p className="blind-watching">Watching blind… no peeking at the credits.</p>
-            <button className="blind-btn blind-btn-primary blind-reveal-now" onClick={goReveal}>
+            <button
+              type="button"
+              className="blind-btn blind-btn-primary blind-reveal-now"
+              onClick={goReveal}
+            >
               Reveal now
             </button>
           </div>
@@ -241,7 +254,7 @@ export default function BlindDate({ onClose }) {
         {stage === STAGE.REVEAL && movie && (
           <RevealCard
             movie={movie}
-            shown={revealShown}
+            shown={entered}
             verdict={verdict}
             onVerdict={castVerdict}
             onNext={nextDate}
@@ -273,8 +286,12 @@ function RevealCard({ movie, shown, verdict, onVerdict, onNext }) {
         ) : (
           <div className="blind-reveal-bg blind-reveal-bg-empty" aria-hidden="true" />
         )}
-        {poster && (
+        {poster ? (
           <img className="blind-reveal-poster" src={poster} alt={`${movie.title} poster`} />
+        ) : (
+          // Match the other modes: a missing poster leaves a labelled slot
+          // rather than silently collapsing the hero's layout.
+          <div className="blind-reveal-poster blind-reveal-poster-empty">No poster</div>
         )}
         <div className="blind-reveal-flash" aria-hidden="true" />
       </div>
@@ -306,12 +323,14 @@ function RevealCard({ movie, shown, verdict, onVerdict, onNext }) {
             <p className="blind-verdict-prompt">So… what&apos;s the verdict?</p>
             <div className="blind-verdict-row">
               <button
+                type="button"
                 className="blind-btn blind-btn-into"
                 onClick={() => onVerdict('into')}
               >
                 Into it
               </button>
               <button
+                type="button"
                 className="blind-btn blind-btn-pass"
                 onClick={() => onVerdict('pass')}
               >
@@ -320,12 +339,16 @@ function RevealCard({ movie, shown, verdict, onVerdict, onNext }) {
             </div>
           </>
         ) : (
-          <div className={`blind-verdict-result blind-verdict-${verdict.kind}`}>
+          <div
+            className={`blind-verdict-result blind-verdict-${verdict.kind}`}
+            role="status"
+            aria-live="polite"
+          >
             <p className="blind-verdict-line">{verdict.line}</p>
           </div>
         )}
 
-        <button className="blind-btn blind-btn-primary blind-next" onClick={onNext}>
+        <button type="button" className="blind-btn blind-btn-primary blind-next" onClick={onNext}>
           Next blind date →
         </button>
       </div>

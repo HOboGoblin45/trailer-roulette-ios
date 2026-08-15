@@ -184,6 +184,21 @@ export async function discoverByYear(year, { page = 1, voteFloor = 50 } = {}) {
   });
 }
 
+/**
+ * Title search (used by Theater Mode to match a theater's programme titles to
+ * TMDB movies). Optional year pins remakes ("Moana (2026)" vs 2016). Cached.
+ */
+export async function searchMovie(query, { year, page = 1 } = {}) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  return cached(`search:${q.toLowerCase()}:${year || ''}:${page}`, async () => {
+    const params = { query: q, page, include_adult: false };
+    if (year) params.primary_release_year = year;
+    const data = await call('/search/movie', params);
+    return data.results || [];
+  });
+}
+
 export async function getTrailer(movieId) {
   return cached(`trailer:${movieId}`, async () => {
     const data = await call(`/movie/${movieId}/videos`);

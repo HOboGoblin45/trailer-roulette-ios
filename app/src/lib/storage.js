@@ -55,4 +55,8 @@ export const KEYS = Object.freeze({
   WATCHLIST: 'trailer-roulette.watchlist',
   ONBOARDED: 'trailer-roulette.onboarded',
   ERROR_LOG: 'trailer-roulette.error-log',
+  // Theater Mode (v3.2.0)
+  SOURCE: 'trailer-roulette.source', // null/absent = Everything (random); or { marketSlug, marketName }
+  THEATER_DIRECTORY: 'trailer-roulette.theater-directory',
+  THEATER_LINEUP_PREFIX: 'trailer-roulette.theater-lineup.', // + "<market>:<yyyy-mm>"
 });

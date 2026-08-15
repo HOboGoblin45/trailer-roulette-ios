@@ -1,0 +1,181 @@
+/* TheaterSheet — Liquid Glass bottom sheet for picking the roulette's
+   theater. Reuses FunSheet's backdrop/sheet material; rows are list-style
+   (a directory reads better as rows than a grid). */
+
+.theater-sheet { display: flex; flex-direction: column; max-height: 78vh; }
+
+/* Drag-to-dismiss. The grabber looked like a grabber and did nothing, which
+   is a promise the sheet was not keeping; TheaterSheet.jsx tracks the pointer
+   on this strip and translates the sheet inline.
+   `touch-action: none` is what makes that possible — without it WebKit claims
+   the vertical pan for scrolling before the first pointermove arrives.
+   Only the strip is grabbable: the list underneath has to stay scrollable. */
+.theater-grab {
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  cursor: grab;
+  /* The grabber is 5px tall — the strip is what the thumb actually finds. */
+  margin: -4px -16px 0;
+  padding: 4px 16px 0;
+}
+.theater-grab:active { cursor: grabbing; }
+
+/* Once dragged, the inline transform is the source of truth. funUp/funDown
+   fill `both`, and a held animation frame outranks an inline style, so the
+   shared keyframes have to be switched off for the drag AND for the exit that
+   follows it (the JSX drives that exit with the same --exit-ms/--exit-ease). */
+.theater-sheet.is-dragging { animation: none !important; }
+
+.theater-tools {
+  display: flex; gap: var(--space-2); margin: 2px 0 10px;
+}
+
+/* Search + its own clear button, which has to be ours: the input sets
+   -webkit-appearance: none below (for the flat glass field), and that strips
+   iOS's native clear affordance with it. */
+.theater-search-wrap { position: relative; display: flex; flex: 1; min-width: 0; }
+.theater-search {
+  flex: 1; min-width: 0; padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--glass-ultrathin);
+  border: 1px solid var(--hairline);
+  color: var(--fg); font-size: 15px;
+  outline: none;
+  -webkit-appearance: none;
+}
+/* Room for the clear button so a long query never runs under it. */
+.theater-search-wrap .theater-search { padding-right: 38px; }
+.theater-search::placeholder { color: var(--fg-dim); }
+.theater-search:focus { border-color: rgba(61, 165, 244, 0.55); }
+
+.theater-clear {
+  position: absolute; top: 50%; right: 5px;
+  transform: translateY(-50%);
+  width: 28px; height: 28px; min-width: 0; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--fg-2); font-size: 17px; line-height: 1;
+  cursor: pointer;
+}
+/* 28px glyph, 44px touch — same trick the topbar controls use. */
+.theater-clear::before {
+  content: '';
+  position: absolute; inset: -8px;
+  border-radius: 50%;
+}
+.theater-clear:active { background: rgba(255, 255, 255, 0.24); }
+
+.theater-near {
+  flex: none; padding: 10px 12px; cursor: pointer;
+  border-radius: var(--radius);
+  background: rgba(61, 165, 244, 0.16);
+  border: 1px solid rgba(61, 165, 244, 0.4);
+  color: var(--accent); font-size: 13px; font-weight: 700;
+  transition: transform 0.14s var(--press), background 0.16s ease;
+}
+.theater-near:active { transform: scale(0.97); }
+.theater-near:disabled { opacity: 0.75; cursor: default; }
+
+/* Location granted. This is no longer a control, so it must stop looking like
+   one: a permanently disabled pill still reads as "tap me, then wonder why
+   nothing happened". Same size as the button it replaces, so the tools row
+   does not reflow when it swaps in. */
+.theater-nearstate {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  color: var(--fg-dim); font-size: 13px; font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Quiet answer to a tap that could not do what it promised. */
+.theater-note {
+  margin: -4px 0 10px;
+  color: var(--fg-dim); font-size: 12px; line-height: 1.3;
+}
+
+.theater-list {
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  margin: 0 -2px; padding: 2px;
+  min-height: 120px;
+}
+
+.theater-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%; box-sizing: border-box;
+  /* A floor, not a fixed height: rows must stay identical whether or not the
+     sub-line has a distance on it. */
+  min-height: 58px;
+  text-align: left; padding: 11px 12px; cursor: pointer;
+  border-radius: var(--radius-lg);
+  background: var(--glass-ultrathin);
+  border: 1px solid var(--hairline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: var(--fg);
+  transition: transform 0.14s var(--press), background 0.16s ease, border-color 0.16s ease;
+}
+.theater-row:active { transform: scale(0.98); background: rgba(255, 255, 255, 0.12); }
+.theater-row.is-active {
+  border-color: rgba(61, 165, 244, 0.55);
+  background: rgba(61, 165, 244, 0.10);
+}
+.theater-row-everything { margin-bottom: 10px; }
+
+/* Letter-monogram tile (no emojis, ever — matches FunSheet). */
+.theater-mono {
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 11px;
+  background: rgba(61, 165, 244, 0.16);
+  color: var(--accent);
+  font-size: 16px; font-weight: 800; line-height: 1;
+  border: 1px solid rgba(61, 165, 244, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.theater-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.theater-name {
+  font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Truncate like the name above it. "Alamo Drafthouse · TX · 1,204 mi" wraps to
+   two lines at 320-375pt, and a list where some rows are one line and some are
+   two reads as broken rather than as informative. */
+.theater-sub {
+  font-size: 12px; color: var(--fg-dim); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.theater-check {
+  margin-left: auto; flex: none;
+  color: var(--accent); font-size: 16px; font-weight: 800;
+}
+
+/* Loading. Real-sized placeholder rows, so the sheet opens at the height it
+   will keep instead of a 120px box that balloons into a full list the moment
+   the directory lands — taking the Close button out from under the thumb. */
+.theater-row-skeleton { cursor: default; }
+.theater-row-skeleton:active { transform: none; background: var(--glass-ultrathin); }
+.theater-skel {
+  display: block;
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  animation: theaterSkel 1.5s ease-in-out infinite;
+}
+.theater-skel-mono { border-radius: 11px; border-color: transparent; box-shadow: none; }
+.theater-skel-name { width: 46%; min-width: 96px; height: 13px; }
+.theater-skel-sub { width: 66%; min-width: 132px; height: 10px; }
+@keyframes theaterSkel {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+.theater-empty {
+  padding: 22px 8px; text-align: center;
+  color: var(--fg-dim); font-size: 13px;
+}
+.theater-empty button { margin-top: var(--space-3); }

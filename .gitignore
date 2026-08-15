@@ -35,3 +35,6 @@ app/preview.*.txt
 
 # Local test artifacts / screenshots
 /test-results/
+
+# Local release bundle - large binary, not source
+TrailerRoulette-v*-complete-*.zip

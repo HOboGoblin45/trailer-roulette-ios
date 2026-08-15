@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   text-align: center;
 }
 
@@ -26,7 +26,7 @@
   align-items: center;
   gap: 2px;
   padding: 10px 6px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
@@ -42,17 +42,22 @@
   color: var(--fg-dim);
 }
 
-.year-heading {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: var(--fg);
-}
-
 .year-dim { margin: 0; color: var(--fg-2); font-size: 15px; line-height: 1.4; }
 
-/* ---- loading / center states ---- */
+/* ---- loading / center / watch / guess / reveal stage ----
+   These four stages are mutually exclusive siblings (only one renders at a
+   time) with very different natural heights — a couple of lines of text vs.
+   a 16:9 player vs. a full result card. Swapping between them used to jolt
+   the whole panel's content height around and shove .year-scorebar with it.
+   A shared min-height on all four keeps that swap calm; the tallest stage
+   (.year-reveal) simply grows past the floor as it always did. */
+.year-center,
+.year-watch,
+.year-guesser,
+.year-reveal {
+  min-height: 300px;
+}
+
 .year-center {
   margin: auto;
   display: flex;
@@ -80,7 +85,7 @@
 .year-player {
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 14px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: #000;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
@@ -107,20 +112,37 @@
   text-shadow: 0 4px 24px rgba(61, 165, 244, 0.35);
 }
 
+/* The one control every round of this mode requires. The painted track
+   stays a thin 14px band (background-size + centred position), but the
+   element's own box — what actually hit-tests for taps — is a full --tap
+   (44pt) tall, so the hit area is padded rather than the visible line
+   thickened. */
 .year-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 14px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(61,165,244,0.5), rgba(255,255,255,0.12));
+  height: var(--tap);
+  background: linear-gradient(90deg, rgba(61, 165, 244, 0.5), rgba(255, 255, 255, 0.12));
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 14px;
+  border-radius: var(--capsule);
   outline: none;
   cursor: pointer;
+}
+/* :focus-visible only, so a drag of the thumb never lights this up — but the
+   slider had no focus affordance at all, keyboard/Switch Control included.
+   Offset is positive (unlike the panel-level rings) since this control isn't
+   edge-anchored. */
+.year-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
 }
 .year-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 34px; height: 34px;
+  /* Was 34x34 — under the 44pt minimum on the mode's one required control. */
+  width: var(--tap); height: var(--tap);
   border-radius: 50%;
   background: var(--gold);
   border: 3px solid #fff;
@@ -129,14 +151,14 @@
 }
 .year-slider::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.06); }
 .year-slider::-moz-range-thumb {
-  width: 34px; height: 34px;
+  width: var(--tap); height: var(--tap);
   border-radius: 50%;
   background: var(--gold);
   border: 3px solid #fff;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   cursor: grab;
 }
-.year-slider::-moz-range-track { height: 14px; border-radius: 999px; background: rgba(255,255,255,0.12); }
+.year-slider::-moz-range-track { height: 14px; border-radius: var(--capsule); background: rgba(255,255,255,0.12); }
 
 .year-ends {
   width: 100%;
@@ -156,7 +178,7 @@
   color: var(--fg);
   min-height: 52px;
   padding: 0 28px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   font-size: 17px;
   font-weight: 700;
   cursor: pointer;
@@ -217,13 +239,13 @@
   position: relative;
   width: 100%;
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   background: rgba(255, 255, 255, 0.1);
   margin: 6px 0 2px;
 }
 .year-tl-fill {
   position: absolute; inset: 0;
-  border-radius: 999px;
+  border-radius: var(--capsule);
   background: linear-gradient(90deg, rgba(61,165,244,0.15), rgba(61,165,244,0.35));
 }
 .year-tl-guess,
@@ -231,6 +253,9 @@
   position: absolute;
   top: 50%;
   width: 4px; height: 22px;
+  /* No radius token fits a 4px-wide marker — --radius-sm (10px) alone
+     already exceeds it, same reasoning as .fun-handle in funsheet.css. Left
+     as a literal on purpose. */
   border-radius: 3px;
   transform: translate(-50%, -50%);
 }
@@ -247,7 +272,7 @@
   width: 100%;
   text-align: left;
   padding: 12px;
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: var(--bg-2);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -255,7 +280,7 @@
   flex: 0 0 auto;
   width: 64px; height: 96px;
   object-fit: cover;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--bg-3);
 }
 .year-poster-empty {
@@ -279,5 +304,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .year-reveal { animation: none; }
-  .year-spinner { animation-duration: 1.4s; }
+  /* Used to try to slow to 1.4s here, but the global reduced-motion rule in
+     styles/index.css forces animation-duration to 0.01ms with !important,
+     which always outranks this non-important override, so the slow spin
+     never ran — it silently froze instead. Freezing is a fine outcome for a
+     loading spinner, so this now says so explicitly (animation-name isn't
+     touched by the global rule, so unlike the duration trick this actually
+     takes effect). For a genuine slowed spin instead, GuessYear.jsx would
+     need to add `motion-safe-exempt` to the .year-spinner element — CSS
+     alone can't opt it out of the global override. */
+  .year-spinner { animation: none; }
 }

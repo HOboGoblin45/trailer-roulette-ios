@@ -9,7 +9,9 @@ import {
 } from '../lib/tmdb.js';
 import Player from '../components/Player.jsx';
 import * as haptics from '../lib/haptics.js';
+import { useOverlay, useStageEnter } from './overlay.js';
 
+const TITLE = 'Time Machine';
 const FLOOR_YEAR = 1972;
 const CEIL_YEAR = new Date().getFullYear();
 
@@ -47,6 +49,7 @@ function clampYear(y) {
 }
 
 export default function TimeMachine({ onClose }) {
+  const { closing, close, dialogProps } = useOverlay({ onClose, label: TITLE });
   const [phase, setPhase] = useState('idle');
   const [displayYear, setDisplayYear] = useState(CEIL_YEAR);
   const [landedYear, setLandedYear] = useState(null);
@@ -308,19 +311,25 @@ export default function TimeMachine({ onClose }) {
   const yearDigits = String(displayYear);
   const upcoming = next || (queue.length > 1 ? queue[(idx + 1) % queue.length] : null);
   const currentGenre = current ? (genreNames(current.genre_ids)[0] || '') : '';
+  // idle -> spinning -> loading -> playing all swapped instantly; each panel
+  // now paints its out-state and transitions in.
+  const entered = useStageEnter(phase);
+  const enter = `feat-enter${entered ? ' is-in' : ''}`;
 
   return (
-    <div className="feat feat-time">
-      <button className="feat-close" onClick={onClose} aria-label="Close">
+    <div className={`feat feat-time${closing ? ' is-closing' : ''}`} {...dialogProps}>
+      <button type="button" className="feat-close" onClick={close} aria-label="Close">
         ✕
       </button>
+
+      <h1 className="feat-title">{TITLE}</h1>
 
       {/* Scanline / glow atmosphere layer */}
       <div className="time-scanlines" aria-hidden="true" />
 
       {/* ---------- INTRO ---------- */}
       {phase === 'idle' && (
-        <div className="time-intro">
+        <div className={`time-intro ${enter}`}>
           <div className="time-eyebrow">DESTINATION</div>
           <div className="time-readout" data-spinning="false">
             <span className="time-readout-glow" aria-hidden="true">
@@ -345,7 +354,7 @@ export default function TimeMachine({ onClose }) {
 
       {/* ---------- SPINNING ---------- */}
       {phase === 'spinning' && (
-        <div className="time-intro">
+        <div className={`time-intro ${enter}`} role="status" aria-live="polite">
           <div className="time-eyebrow time-eyebrow-live">SPINNING THE DIAL…</div>
           <div className="time-readout" data-spinning="true">
             <span className="time-readout-glow" aria-hidden="true">
@@ -359,7 +368,7 @@ export default function TimeMachine({ onClose }) {
 
       {/* ---------- LOADING ---------- */}
       {phase === 'loading' && (
-        <div className="time-intro">
+        <div className={`time-intro ${enter}`} role="status" aria-live="polite">
           <div className="time-eyebrow time-eyebrow-live">ARRIVED</div>
           <div className="time-readout" data-landed="true">
             <span className="time-readout-glow" aria-hidden="true">
@@ -380,7 +389,7 @@ export default function TimeMachine({ onClose }) {
 
       {/* ---------- PLAYING ---------- */}
       {phase === 'playing' && current && (
-        <div className="time-stage">
+        <div className={`time-stage ${enter}`}>
           <div className="time-stage-player">
             <Player
               trailer={current}
@@ -402,7 +411,11 @@ export default function TimeMachine({ onClose }) {
             </div>
 
             <div className="time-nowplaying">
-              <div className="time-nowplaying-title">{current.title}</div>
+              {/* Heading semantics without a UA-styled <h2>, so the overlay's
+                  hand-tuned spacing stays exactly as it is. */}
+              <div className="time-nowplaying-title" role="heading" aria-level={2}>
+                {current.title}
+              </div>
               <div className="time-nowplaying-meta">
                 {currentGenre && <span className="time-chip">{currentGenre}</span>}
                 {current._year && current._year !== landedYear && (
@@ -454,7 +467,7 @@ export default function TimeMachine({ onClose }) {
 
       {/* ---------- ERROR ---------- */}
       {phase === 'error' && (
-        <div className="time-intro">
+        <div className={`time-intro ${enter}`} role="alert">
           <div className="time-eyebrow">SIGNAL LOST</div>
           <p className="time-tagline">
             {statusMsg || 'The time circuits glitched. Try spinning again.'}
