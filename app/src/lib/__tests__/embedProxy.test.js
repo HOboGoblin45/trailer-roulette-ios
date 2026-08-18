@@ -313,6 +313,9 @@ describe('embed proxy — the state-event subscription (v3.4.2)', () => {
   // end-detection mirror waits on. Proven live (2026-08-16): a listening-only
   // frame delivered ZERO state events across a full video; the same page with
   // +addEventListener delivered PLAYING at ~1.4s and ENDED at the end.
+  // The subscription is anchored to onReady — the player's own "ready"
+  // announcement, the earliest point proven (in the same live test) to
+  // accept the command; the widget drops commands posted before it boots.
   const subscriptions = (h, name) =>
     h.ytCommands.filter((c) => {
       let d;
@@ -321,29 +324,34 @@ describe('embed proxy — the state-event subscription (v3.4.2)', () => {
              Array.isArray(d.args) && d.args[0] === name;
     });
 
-  it('subscribes to onStateChange and onError after the iframe loads', async () => {
+  it('subscribes to onStateChange and onError when the player is ready', async () => {
     const h = await boot();
+    expect(subscriptions(h, 'onStateChange')).toHaveLength(0); // not before ready
+    h.yt('onReady');
     expect(subscriptions(h, 'onStateChange').length).toBeGreaterThanOrEqual(1);
     expect(subscriptions(h, 'onError').length).toBeGreaterThanOrEqual(1);
   });
 
   it('never double-subscribes once state events are flowing', async () => {
     const h = await boot();
+    h.yt('onReady');
     h.state(1); // first state event — the subscription demonstrably landed
-    h.advance(5000); // past the 2.5s retry window
+    h.advance(5000); // past the 2s retry window
     expect(subscriptions(h, 'onStateChange')).toHaveLength(1);
     expect(subscriptions(h, 'onError')).toHaveLength(1);
   });
 
-  it('retries the subscription once if no state event ever arrives', async () => {
+  it('retries the subscription once if no state event arrives after ready', async () => {
     const h = await boot();
-    h.advance(4000); // load-time send + 2.5s retry, widget still silent
+    h.yt('onReady');
+    h.advance(4000); // onReady send + 2s retry, widget still silent
     expect(subscriptions(h, 'onStateChange')).toHaveLength(2);
     expect(subscriptions(h, 'onError')).toHaveLength(2);
   });
 
   it('does not re-subscribe on a trLoad swap once events are flowing', async () => {
     const h = await boot();
+    h.yt('onReady');
     h.state(1);
     expect(h.win.trLoad('NEWID12345', 9)).toBe(true);
     h.advance(3000); // past the 1.2s swap re-assert

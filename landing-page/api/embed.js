@@ -64,13 +64,11 @@
  * including the ENDED event every end-detection mirror waits on. Five
  * releases tuned the same end-detection logic against that event; none of
  * it could run because the event never arrived. The page now sends
- * addEventListener('onStateChange') and addEventListener('onError') on
- * load, and retries once if no state event arrives within 2.5s (the widget
- * may drop commands posted before it finishes booting; a landed
- * subscription delivers its first state event within ~1.5s, so 2.5s of
- * silence means the send failed). The subscription is player-level and
- * survives loadVideoById, so a trLoad swap never re-subscribes (no
- * duplicate events).
+ * addEventListener('onStateChange') and addEventListener('onError') when
+ * the player announces itself ready (the moment proven live to accept the
+ * subscription), with one retry 2s later if no state event has arrived.
+ * The subscription is player-level and survives loadVideoById, so a trLoad
+ * swap never re-subscribes (no duplicate events).
  *
  * All additions are backward compatible: older native builds ignore unknown
  * kinds ('hb', 'meta') and extra fields, and this page still forwards the
@@ -201,15 +199,6 @@ export default async function handler(request) {
     sendListening();
     setTimeout(sendListening, 500);
     setTimeout(sendListening, 1500);
-    subscribeToPlayerEvents();
-    // If the first subscription raced the iframe's own bootstrap and was
-    // lost, we will never receive an onStateChange. A landed subscription
-    // delivers its first state event within ~1.5s, so by 2.5s we know it
-    // failed — retry once. The flag guards against a duplicate subscription
-    // in the normal case where the first try landed.
-    setTimeout(function () {
-      if (!youtubeEventsSeen) { playerSubscriptionSent = false; subscribeToPlayerEvents(); }
-    }, 2500);
     toNative({ kind: 'iframeLoaded' });
   });
 
@@ -226,10 +215,12 @@ export default async function handler(request) {
   // logic against an event that never reached the page: none of it could run.
   // The subscription must be sent once per PLAYER LIFETIME, not per video:
   // it survives loadVideoById (trLoad) and playlist advance, so re-sending it
-  // on every swap would just risk duplicate events. We send it here on load,
-  // and defensively after a trLoad only if no state event has ever been
-  // observed (the widget may drop commands posted before it finishes
-  // booting; the 2.5s retry above covers that race).
+  // on every swap would just risk duplicate events. It is anchored to the
+  // player's OWN "ready" announcement (see the onReady handler): the widget
+  // drops commands posted before it has booted, and onReady is the earliest
+  // point proven (live A/B, 2026-08-16) to accept the subscription and
+  // deliver PLAYING/ENDED in return. A latch armed by the first received
+  // state event prevents the 2s retry from ever double-subscribing.
   var playerSubscriptionSent = false; // the command has been POSTed
   var youtubeEventsSeen = false;      // an actual onStateChange has arrived
   function subscribeToPlayerEvents() {
@@ -449,6 +440,17 @@ export default async function handler(request) {
       toNative({ kind: 'error', code: data.info });
     } else if (data.event === 'onReady') {
       toNative({ kind: 'ready' });
+      // v3.4.2: assert the state-event subscription NOW — the one moment
+      // proven live (2026-08-16 A/B) to deliver onStateChange/ENDED. The
+      // widget drops commands posted before it has booted, and onReady is
+      // the player's own "I am initialised" announcement, so this is the
+      // earliest safe point. A duplicated subscription would risk duplicate
+      // events, so the first event arrival arms a latch; if nothing arrives
+      // within 2s of onReady the send was dropped and we retry once.
+      subscribeToPlayerEvents();
+      setTimeout(function () {
+        if (!youtubeEventsSeen) { playerSubscriptionSent = false; subscribeToPlayerEvents(); }
+      }, 2000);
     }
   });
 

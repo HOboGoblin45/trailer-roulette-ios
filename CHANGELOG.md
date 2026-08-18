@@ -21,13 +21,17 @@ handoff) by retuning consumers of an event that never reached the page.
 ### Fixed
 - **The proxy now subscribes to player events** (`landing-page/api/embed.js`):
   sends `addEventListener('onStateChange')` + `addEventListener('onError')`
-  after the iframe loads, and retries once at 2.5s if no state event has
-  arrived (a landed subscription delivers its first state event within
-  ~1.5s). The subscription is player-level and survives `loadVideoById`
-  (`trLoad`), so swaps never double-subscribe. This makes the real `ENDED`
-  reach every existing end-detection path in the proxy — and because the
-  proxy is the only layer that reaches already-installed builds, **deploying
-  it fixes the v3.4.1 build already in TestFlight without a new app build**.
+  when the player announces itself ready — the moment proven live to accept
+  the subscription — with one retry at +2s if no state event has arrived (a
+  landed subscription delivers its first state event within ~1.5s; the same
+  2s of silence also means the send failed). The subscription is player-level
+  and survives `loadVideoById` (`trLoad`), so swaps never double-subscribe.
+  This makes the real `ENDED` reach every existing end-detection path in the
+  proxy — and because the proxy is the only layer that reaches
+  already-installed builds, **deploying it fixes the v3.4.1 build already in
+  TestFlight without a new app build**. Initial v3.4.2 anchored the send at
+  iframe-load, which the widget may drop before it finishes booting; the send
+  is anchored to `onReady` instead (see docs/bugs.md B4).
 - **Native playlist handoff disabled** (`TrailerPlayer.swift`). v3.4.0 handed
   the queue to YouTube via `loadPlaylist`. Live observation showed the widget
   accepts it and advances between items on its own, but fires **no `ENDED`
