@@ -60,4 +60,6 @@ export const KEYS = Object.freeze({
   SOURCE: 'trailer-roulette.source', // null/absent = Everything (random); or { marketSlug, marketName }
   THEATER_DIRECTORY: 'trailer-roulette.theater-directory',
   THEATER_LINEUP_PREFIX: 'trailer-roulette.theater-lineup.', // + "<market>:<yyyy-mm>"
+  // Filters (v3.4.3): { decades: number[], genres: number[] } — both empty = Everything
+  FILTERS: 'trailer-roulette.filters',
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   pickDiscoverPage, TMDB_MAX_DISCOVER_PAGE, discoverMovies,
-  discoverRandomMix, eraStrata, CATALOG_START_YEAR,
+  discoverRandomMix, eraStrata, CATALOG_START_YEAR, filtersQuery, catalogDecades,
 } from '../tmdb.js';
 
 describe('pickDiscoverPage', () => {
@@ -108,6 +108,17 @@ describe('eraStrata', () => {
   });
 });
 
+describe('catalogDecades — the filter sheet decade options', () => {
+  it('offers every decade from the catalog start through the current year', () => {
+    expect(catalogDecades(2026)).toEqual([1970, 1980, 1990, 2000, 2010, 2020]);
+  });
+
+  it('starts at the catalog start year even for a partial current decade', () => {
+    expect(catalogDecades(1970)).toEqual([1970]);
+    expect(catalogDecades(1975)).toEqual([1970]);
+  });
+});
+
 describe('discoverRandomMix — era-diverse sampling', () => {
   let calls;
   beforeEach(() => {
@@ -154,5 +165,87 @@ describe('discoverRandomMix — era-diverse sampling', () => {
     // first band threw → still get the other bands, no rejection
     expect(Array.isArray(merged)).toBe(true);
     expect(merged.length).toBeGreaterThan(0);
+  });
+});
+
+describe('filtersQuery — decade + genre filter params (v3.4.3)', () => {
+  it('returns no constraints when nothing is selected', () => {
+    expect(filtersQuery({})).toEqual({});
+    expect(filtersQuery({ decades: [], genres: [] })).toEqual({});
+    expect(filtersQuery({ decades: undefined, genres: undefined })).toEqual({});
+  });
+
+  it('maps a single decade to its year range', () => {
+    const q = filtersQuery({ decades: [1980] });
+    expect(q['primary_release_date.gte']).toBe('1980-01-01');
+    expect(q['primary_release_date.lte']).toBe('1989-12-31');
+  });
+
+  it('collapses multiple decades to the span between earliest and latest', () => {
+    const q = filtersQuery({ decades: [1980, 1990] });
+    expect(q['primary_release_date.gte']).toBe('1980-01-01');
+    expect(q['primary_release_date.lte']).toBe('1999-12-31');
+  });
+
+  it('joins multiple genres into with_genres (OR semantics)', () => {
+    const q = filtersQuery({ genres: [28, 35, 18] });
+    expect(q.with_genres).toBe('28,35,18');
+  });
+
+  it('combines decades and genres into one query', () => {
+    const q = filtersQuery({ decades: [1970, 2000], genres: [27] });
+    expect(q.with_genres).toBe('27');
+    expect(q['primary_release_date.gte']).toBe('1970-01-01');
+    expect(q['primary_release_date.lte']).toBe('2009-12-31');
+  });
+
+  it('ignores non-numeric genre ids instead of emitting NaN', () => {
+    const q = filtersQuery({ genres: [28, 'bogus', 35] });
+    expect(q.with_genres).toBe('28,35');
+  });
+});
+
+describe('discoverMovies filter params (v3.4.3)', () => {
+  let lastUrl;
+  beforeEach(() => {
+    lastUrl = null;
+    global.fetch = vi.fn(async (url) => {
+      lastUrl = url;
+      return { ok: true, json: async () => ({ results: [], total_pages: 1 }) };
+    });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  const params = () => new URL(lastUrl).searchParams;
+
+  it('passes genre and decade arrays into the discover URL', async () => {
+    await discoverMovies({ genres: [27, 53], decades: [1980] });
+    expect(params().get('with_genres')).toBe('27,53');
+    expect(params().get('primary_release_date.gte')).toBe('1980-01-01');
+    expect(params().get('primary_release_date.lte')).toBe('1989-12-31');
+  });
+
+  it('lowers the vote floor when a filter is applied (niche is thinner)', async () => {
+    await discoverMovies({ genres: [27], decades: [1970] });
+    expect(params().get('vote_count.gte')).toBe('50');
+  });
+
+  it('keeps the unfiltered vote floors unchanged', async () => {
+    await discoverMovies({});
+    expect(params().get('vote_count.gte')).toBe('200');
+    await discoverMovies({ era: 'modern' });
+    expect(params().get('vote_count.gte')).toBe('100');
+  });
+
+  it('prefers an explicit single decade over a decade array', async () => {
+    await discoverMovies({ decade: '1990', decades: [1980] });
+    expect(params().get('primary_release_date.gte')).toBe('1990-01-01');
+    expect(params().get('primary_release_date.lte')).toBe('1999-12-31');
+  });
+
+  it('does not apply an era window when a filter decade is set', async () => {
+    await discoverMovies({ era: 'classic', decades: [2000, 2010] });
+    expect(params().get('primary_release_date.gte')).toBe('2000-01-01');
+    expect(params().get('primary_release_date.lte')).toBe('2019-12-31');
   });
 });

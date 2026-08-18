@@ -27,7 +27,8 @@ happen on a GitHub Actions macOS runner.
 
 An iOS app that shuffles movie trailers like a TV channel. Two buttons: **Play**
 (spin a random trailer) and **AirPlay** (throw it to a TV). Trailers are meant to
-auto-advance forever. No accounts, no filters, no algorithm.
+auto-advance forever. No accounts, no algorithm. Optional **filters** (v3.4.3)
+narrow the Everything feed by decade and genre (Filter pill, top bar).
 
 Secondary features: **Theater Mode** (tune the channel to one real cinema's
 monthly programme, via Alamo Drafthouse's public JSON API), six optional "fun

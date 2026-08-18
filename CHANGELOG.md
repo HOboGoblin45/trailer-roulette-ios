@@ -4,6 +4,36 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.4.3] — unreleased (held until P1 playback verification passes)
+
+**Decade + genre filters.** The Everything feed can be narrowed to chosen
+decades and genres (v3.4.3). NOT for release until the v3.4.2 auto-advance
+fix has passed its on-device P1 test (three trailers chaining with zero
+taps) — see docs/HANDOFF.md §7 and docs/bugs.md B4. Filters live in
+`src/components/FiltersSheet.jsx`, persist via `storage.KEYS.FILTERS`, and
+shape the queue through `filtersQuery`/`discoverMovies` in `src/lib/tmdb.js`.
+
+### Added
+- **Filter sheet** (Filter pill in the top bar): multi-select decade chips
+  (1970s through the current decade, played as one contiguous range) and
+  multi-select genre chips (OR semantics via TMDB `with_genres`). A live
+  summary line shows what the roulette will draw from. Clear and Apply
+  actions; Apply rebuilds the queue from scratch.
+- **Filtered queue build**: with a filter active, the Everything feed draws
+  three parallel random deep pages from the filtered TMDB discover catalog
+  (vote floor relaxed to 50 for sparse niches) instead of the era-diverse
+  mix. An empty result falls back to the unfiltered mix rather than
+  stranding the channel — the Filter pill stays lit so the user can widen.
+- Filters persist across launches and apply to the Everything channel only
+  (a tuned theater keeps its own finite lineup; the fun modes bring their
+  own selectors).
+- Tests: `filtersQuery` (decade range collapse, genre OR, sanitisation),
+  `discoverMovies` filter params, `catalogDecades` (13 new, 184 total).
+
+### Notes
+- Product copy updated: the app is now "optional filters, no accounts, no
+  algorithm" — the "no filters" thesis is retired by owner decision.
+
 ## [3.4.2] — 2026-08-16
 
 **The missing event.** Trailers have played to their end and stopped on

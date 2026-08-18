@@ -398,6 +398,12 @@ a { color: var(--accent); text-decoration: none; }
   border-color: rgba(61, 165, 244, 0.5);
 }
 
+/* Filter pill — lit while a decade/genre filter is shaping the feed. */
+.tr-pill-filter.is-filtered {
+  background: rgba(61, 165, 244, 0.20);
+  border-color: rgba(61, 165, 244, 0.5);
+}
+
 /* Live "Now Showing" badge — the channel is tuned to a real theater. */
 .tr-badge-live {
   background: rgba(61, 165, 244, 0.26);
@@ -856,6 +862,49 @@ a { color: var(--accent); text-decoration: none; }
 .about-section p:last-child { margin-bottom: 0; }
 .tagline { font-size: 17px !important; color: var(--fg) !important; letter-spacing: -0.01em; }
 .version { font-size: 13px !important; color: var(--fg-dim) !important; }
+
+/* ─────────────────────────── Filters sheet (v3.4.3) ─────────────────── */
+.filters-screen { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
+.filters-chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.filters-chip {
+  min-height: var(--tap);            /* HIG minimum tap target */
+  padding: 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--capsule);
+  background: var(--glass-ultrathin);
+  color: var(--fg);
+  font-size: 14px; font-weight: 500;
+  display: inline-flex; align-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.filters-chip.is-on {
+  background: var(--accent);
+  border-color: transparent;
+  color: #06101A;                    /* dark text on the accent, readable in light mode */
+  font-weight: 700;
+}
+.filters-chip:active { transform: scale(0.94); }
+.filters-chip:disabled { opacity: 0.4; }
+.filters-hint {
+  font-size: 13px; color: var(--fg-dim); line-height: 1.4;
+  margin: 0 0 12px;
+}
+.filters-summary { margin-top: 16px; }
+.filters-summary-label {
+  margin: 0 0 4px;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--accent); font-weight: 700;
+}
+.filters-summary-value {
+  margin: 0; font-size: 17px; font-weight: 600; color: var(--fg); line-height: 1.3;
+}
+.filters-actions {
+  display: flex; gap: 10px;
+  padding: 16px 16px 0;
+}
+.filters-actions .tr-pill { flex: 1; justify-content: center; min-height: var(--tap); }
 
 /* ─────────────────────────── Fun-mode shell ─────────────────────────── */
 /* Shared base for every full-screen mode. Each mode adds its own classes in

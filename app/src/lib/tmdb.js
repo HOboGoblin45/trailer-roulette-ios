@@ -64,34 +64,65 @@ async function call(path, params = {}) {
  */
 export const DEFAULT_ERA_END = '2009-12-31';
 
-export async function discoverMovies({ genre, decade, era = 'all', page = 1 } = {}) {
+/**
+ * Turn user filter selections into /discover query params (filters feature,
+ * v3.4.3).
+ *   decades: array of decade start-years, e.g. [1980, 1990]. Multiple decades
+ *            collapse to the contiguous span between the earliest and latest
+ *            pick ("the 80s and 90s" → 1980–1999). This matches how the feed
+ *            draws years on every other path: a single primary_release_date
+ *            window.
+ *   genres:  array of TMDB genre ids → with_genres (OR semantics).
+ * Returns {} when nothing is selected, so callers can spread it unconditionally.
+ */
+export function filtersQuery({ decades = [], genres = [] } = {}) {
+  const q = {};
+  if (Array.isArray(genres) && genres.length > 0) {
+    q.with_genres = genres.filter(Number.isFinite).join(',');
+  }
+  if (Array.isArray(decades) && decades.length > 0) {
+    const lo = Math.min(...decades);
+    const hi = Math.max(...decades);
+    q['primary_release_date.gte'] = `${lo}-01-01`;
+    q['primary_release_date.lte'] = `${hi + 9}-12-31`;
+  }
+  return q;
+}
+
+export async function discoverMovies({ genre, genres, decade, decades, era = 'all', page = 1 } = {}) {
   // Vote-count floor keeps the queue anchored to recognizable films even as
   // we page deep into the catalog. The default 'all' era spans the entire
   // history of cinema; 'classic' caps at 2009 and 'modern' starts at 2010 for
-  // users who want to narrow the window.
+  // users who want to narrow the window. A user-applied decade/genre filter
+  // lowers the floor (a filtered niche is thinner by nature), and the floor
+  // still keeps out the long tail of no-vote uploads.
   const params = {
     sort_by: 'popularity.desc',
     page,
     include_adult: false,
-    'vote_count.gte': era === 'modern' ? 100 : 200,
+    'vote_count.gte': (genres?.length || decades?.length) ? 50 : (era === 'modern' ? 100 : 200),
   };
   const today = new Date().toISOString().slice(0, 10);
-  if (genre) params.with_genres = genre;
+  Object.assign(params, filtersQuery({ decades, genres }));
+  if (genre) params.with_genres = String(genre);
   if (decade) {
     params['primary_release_date.gte'] = `${decade}-01-01`;
     params['primary_release_date.lte'] = `${Number(decade) + 9}-12-31`;
-  } else if (era === 'classic') {
-    // Classic: released up to and including 2009.
-    params['primary_release_date.lte'] = DEFAULT_ERA_END;
-  } else if (era === 'modern') {
-    // Modern: 2010 through today. Capping at today excludes unreleased/future
-    // titles so the queue isn't dominated by hyped upcoming releases.
-    params['primary_release_date.gte'] = '2010-01-01';
-    params['primary_release_date.lte'] = today;
-  } else {
-    // 'all' (default): everything released up to today — the cap keeps the
-    // catalog from over-indexing on not-yet-released hype.
-    params['primary_release_date.lte'] = today;
+  } else if (!params['primary_release_date.gte']) {
+    // No decade window (single or multi) — apply the era window instead.
+    if (era === 'classic') {
+      // Classic: released up to and including 2009.
+      params['primary_release_date.lte'] = DEFAULT_ERA_END;
+    } else if (era === 'modern') {
+      // Modern: 2010 through today. Capping at today excludes unreleased/future
+      // titles so the queue isn't dominated by hyped upcoming releases.
+      params['primary_release_date.gte'] = '2010-01-01';
+      params['primary_release_date.lte'] = today;
+    } else {
+      // 'all' (default): everything released up to today — the cap keeps the
+      // catalog from over-indexing on not-yet-released hype.
+      params['primary_release_date.lte'] = today;
+    }
   }
   return call('/discover/movie', params);
 }
@@ -141,6 +172,18 @@ export function eraStrata(currentYear = new Date().getFullYear()) {
     { lo: 2010, hi: 2019, voteFloor: 180, maxPage: 5 },
     { lo: 2020, hi: currentYear, voteFloor: 150, maxPage: 5 },
   ];
+}
+
+/**
+ * The decade chips offered in the filter sheet: every decade from the
+ * catalog's start year through the current one, in steps of ten
+ * (1970s, 1980s, …). Matches the coverage of eraStrata(), so a filter can
+ * never ask for a decade the unfiltered feed would not draw from anyway.
+ */
+export function catalogDecades(nowYear = new Date().getFullYear()) {
+  const out = [];
+  for (let y = CATALOG_START_YEAR; y <= nowYear; y += 10) out.push(y);
+  return out;
 }
 
 /**

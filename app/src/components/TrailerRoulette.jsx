@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import Player from './Player.jsx';
 import AboutScreen from './AboutScreen.jsx';
 import TheaterSheet from './TheaterSheet.jsx';
+import FiltersSheet from './FiltersSheet.jsx';
 import MovieSheet from './MovieSheet.jsx';
 import FunSheet from '../features/FunSheet.jsx';
 import { FEATURES } from '../features/index.js';
@@ -125,8 +126,9 @@ function FirstRunHint({ open, onClose }) {
  *
  * A random, never-ending feed of movie trailers from every genre and every
  * decade. Two buttons: Play (spin a fresh random trailer) and AirPlay (throw
- * it on the TV). No filters, no accounts, no algorithm — just press play and
- * see what comes up. Trailers auto-advance, so it also runs as a hands-free
+ * it on the TV). Optional filters (v3.4.3) narrow the feed by decade and
+ * genre; no accounts, no algorithm — just press play and see what comes up.
+ * Trailers auto-advance, so it also runs as a hands-free
  * channel you can leave going.
  *
  * Theater Mode (v3.2.0): tune the channel to an independent theater. Pick a
@@ -153,6 +155,10 @@ export default function TrailerRoulette() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [muted, setMuted] = useState(false); // restored from storage on boot
   const [hintOpen, setHintOpen] = useState(false); // first launch only
+  // Filters (v3.4.3): { decades: number[], genres: number[] }, both empty =
+  // Everything. Lives here (not in a mode) because it shapes the core feed.
+  const [filters, setFilters] = useState({ decades: [], genres: [] });
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const timerRef = useRef(null);
   const prefetchedRef = useRef(new Set());
@@ -161,10 +167,16 @@ export default function TrailerRoulette() {
   const toppingRef = useRef(false);
   const loadQueueRef = useRef(null);
   const sourceRef = useRef(null); // mirrors `source` for use inside stable callbacks
+  const filtersRef = useRef({ decades: [], genres: [] }); // mirrors `filters` for loadQueue
 
   // Build the queue for the active source.
   //  - Everything: an era-diverse random batch (old + mid + recent), shuffled
   //    uniformly. Falls back to a plain deep-page pull if the mix comes thin.
+  //    With a decade/genre filter applied (v3.4.3) the feed instead draws a
+  //    deep random page from the FILTERED discover catalog — three pages in
+  //    parallel so a sparse niche still fills the batch. A filter that would
+  //    return nothing falls back to the unfiltered mix rather than stranding
+  //    the channel; the Filter pill stays lit so the user can widen it.
   //  - Theater: the selected theater's live "Now Showing" for this month,
   //    matched to TMDB and shuffled. Finite by nature, so when it runs dry we
   //    reshuffle and loop — a cinema lobby reel, not an endless feed.
@@ -176,10 +188,26 @@ export default function TrailerRoulette() {
       if (src?.marketSlug) {
         candidates = await getTheaterQueue(src.marketSlug);
       } else {
-        let results = await discoverRandomMix();
-        if (!results || results.length < 8) {
-          const data = await discoverMovies({ era: 'all', page: pickDiscoverPage(500) });
-          results = [...(results || []), ...(data.results || [])];
+        const flt = filtersRef.current;
+        const filtered = flt && (flt.decades?.length || flt.genres?.length);
+        let results = [];
+        if (filtered) {
+          const pages = await Promise.all([
+            discoverMovies({ genres: flt.genres, decades: flt.decades, page: pickDiscoverPage(500) }),
+            discoverMovies({ genres: flt.genres, decades: flt.decades, page: pickDiscoverPage(500) }),
+            discoverMovies({ genres: flt.genres, decades: flt.decades, page: pickDiscoverPage(500) }),
+          ]);
+          const seen = new Set();
+          results = [].concat(...pages.map((d) => d.results || []))
+            .filter((m) => m && !seen.has(m.id) && seen.add(m.id));
+        }
+        if (!results.length) {
+          // No filter, or the filter came back empty — the unfiltered mix.
+          results = await discoverRandomMix();
+          if (!results || results.length < 8) {
+            const data = await discoverMovies({ era: 'all', page: pickDiscoverPage(500) });
+            results = [...(results || []), ...(data.results || [])];
+          }
         }
         candidates = results.map(toTrailerCandidate);
       }
@@ -242,6 +270,18 @@ export default function TrailerRoulette() {
           setSource(saved);
         }
       } catch { /* default to Everything */ }
+      // Filters restore before the first queue build so the opening feed is
+      // already shaped by the user's last choices.
+      try {
+        const saved = await storage.get(storage.KEYS.FILTERS);
+        if (saved?.decades?.length || saved?.genres?.length) {
+          filtersRef.current = {
+            decades: saved.decades.filter(Number.isFinite) || [],
+            genres: saved.genres.filter(Number.isFinite) || [],
+          };
+          setFilters(filtersRef.current);
+        }
+      } catch { /* default to Everything */ }
       loadQueue();
 
       // Sound is the user's last choice, not ours. Default unmuted: a silent
@@ -300,6 +340,36 @@ export default function TrailerRoulette() {
     setRetrying(true);
     try { await loadQueue(); }
     finally { setRetrying(false); }
+  }, [loadQueue]);
+
+  // Apply decade/genre filters and rebuild the feed from scratch. Persisted
+  // so the channel reopens filtered. Filters shape the Everything channel
+  // only — a tuned theater keeps its own finite lineup, and the fun modes
+  // bring their own selectors.
+  const onApplyFilters = useCallback((next) => {
+    setFiltersOpen(false);
+    const clean = {
+      decades: (next?.decades || []).filter(Number.isFinite),
+      genres: (next?.genres || []).filter(Number.isFinite),
+    };
+    const prev = filtersRef.current;
+    if (JSON.stringify(clean) === JSON.stringify(prev)) return;
+    filtersRef.current = clean;
+    setFilters(clean);
+    (async () => {
+      try {
+        if (clean.decades.length || clean.genres.length) {
+          await storage.set(storage.KEYS.FILTERS, clean);
+        } else {
+          await storage.remove(storage.KEYS.FILTERS);
+        }
+      } catch { /* persistence is best-effort */ }
+    })();
+    setIsPlaying(false); // ends any native session; Play starts the new channel
+    setCurrent(null);
+    setQueue([]);
+    prefetchedRef.current = new Set();
+    loadQueue();
   }, [loadQueue]);
 
   const selectAsCurrent = useCallback(async (trailer, depth = 0) => {
@@ -470,6 +540,7 @@ export default function TrailerRoulette() {
   const nextArt = next ? (backdropUrl(next.backdrop_path) || posterUrl(next.poster_path)) : null;
   const progress = Math.max(0, Math.min(1, (cycleSeconds - secondsLeft) / cycleSeconds));
   const era = current ? decadeLabel(current.year) : null;
+  const filterCount = (filters.decades?.length || 0) + (filters.genres?.length || 0);
   const ActiveComp = activeFeature?.Component;
 
   return (
@@ -523,6 +594,17 @@ export default function TrailerRoulette() {
           the tuned theater's name). Right: Modes pill + info button. */}
       <div className="tr-topbar">
         <div className="tr-topbar-left">
+          <button
+            className={`tr-pill tr-pill-filter${filterCount ? ' is-filtered' : ''}`}
+            onClick={() => { haptics.light(); setFiltersOpen(true); }}
+            aria-label={filterCount ? `Filters active (${filterCount}). Change filters` : 'Filter by decade and genre'}
+          >
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {/* Funnel glyph */}
+              <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+            </svg>
+            <span>{filterCount ? `Filters · ${filterCount}` : 'Filter'}</span>
+          </button>
           <button
             className={`tr-pill tr-pill-theater${source ? ' is-tuned' : ''}`}
             onClick={() => { haptics.light(); setTheaterOpen(true); }}
@@ -636,6 +718,13 @@ export default function TrailerRoulette() {
         current={source}
         onPick={onPickSource}
         onClose={() => setTheaterOpen(false)}
+      />
+
+      <FiltersSheet
+        open={filtersOpen}
+        filters={filters}
+        onApply={onApplyFilters}
+        onClose={() => setFiltersOpen(false)}
       />
 
       <MovieSheet
