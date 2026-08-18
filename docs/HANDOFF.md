@@ -13,7 +13,8 @@ C:\Users\ccres\OneDrive\Documents\Claude\Projects\Trailer Roulette
 ```
 
 **Git remote:** `https://github.com/HOboGoblin45/trailer-roulette-ios`
-**Current branch/tag:** `main` at `6d65f56`, tagged `v3.4.1`
+**Current branch/tag:** `main` at `d8b753c`, tagged `v3.4.2` (the auto-advance
+root-cause fix; see sections 5–7).
 **Apple:** bundle id `app.trailerroulette.ios`, Apple ID `6764209094`
 
 Owner is on **Windows with PowerShell 5.1 and has no Mac**. Do not suggest
