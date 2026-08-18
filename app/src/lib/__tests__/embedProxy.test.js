@@ -304,6 +304,53 @@ describe('embed proxy — end detection', () => {
   });
 });
 
+describe('embed proxy — the state-event subscription (v3.4.2)', () => {
+  // v3.4.2 root cause: the page only ever sent { event:'listening' }, which
+  // arms the player but never asks YouTube to REPORT its state. The IFrame
+  // API delivers onStateChange/onError only after an explicit
+  // addEventListener command; without it the widget's state channel is
+  // silent for the whole clip — including the ENDED event every
+  // end-detection mirror waits on. Proven live (2026-08-16): a listening-only
+  // frame delivered ZERO state events across a full video; the same page with
+  // +addEventListener delivered PLAYING at ~1.4s and ENDED at the end.
+  const subscriptions = (h, name) =>
+    h.ytCommands.filter((c) => {
+      let d;
+      try { d = JSON.parse(c.data); } catch { return false; }
+      return d.event === 'command' && d.func === 'addEventListener' &&
+             Array.isArray(d.args) && d.args[0] === name;
+    });
+
+  it('subscribes to onStateChange and onError after the iframe loads', async () => {
+    const h = await boot();
+    expect(subscriptions(h, 'onStateChange').length).toBeGreaterThanOrEqual(1);
+    expect(subscriptions(h, 'onError').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('never double-subscribes once state events are flowing', async () => {
+    const h = await boot();
+    h.state(1); // first state event — the subscription demonstrably landed
+    h.advance(5000); // past the 2.5s retry window
+    expect(subscriptions(h, 'onStateChange')).toHaveLength(1);
+    expect(subscriptions(h, 'onError')).toHaveLength(1);
+  });
+
+  it('retries the subscription once if no state event ever arrives', async () => {
+    const h = await boot();
+    h.advance(4000); // load-time send + 2.5s retry, widget still silent
+    expect(subscriptions(h, 'onStateChange')).toHaveLength(2);
+    expect(subscriptions(h, 'onError')).toHaveLength(2);
+  });
+
+  it('does not re-subscribe on a trLoad swap once events are flowing', async () => {
+    const h = await boot();
+    h.state(1);
+    expect(h.win.trLoad('NEWID12345', 9)).toBe(true);
+    h.advance(3000); // past the 1.2s swap re-assert
+    expect(subscriptions(h, 'onStateChange')).toHaveLength(1);
+  });
+});
+
 describe('embed proxy — the no-playback cap is narrow', () => {
   it('does not fire when the player reported PLAYING but sent no progress', async () => {
     const res = await handler(new Request('https://trailer-roulette.vercel.app/embed?v=abc123XYZ&e=1'));

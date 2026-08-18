@@ -1893,7 +1893,22 @@ class TrailerPlayerViewController: UIViewController, WKNavigationDelegate, WKUID
             // The YT player itself has spoken (watchdog rule 2).
             sawYtSignal = true
             print("[TrailerPlayer] YT.Player onReady")
-            applyPlaylist()
+            // v3.4.2: playlist handoff DISABLED — deliberately not calling
+            // applyPlaylist(). Live observation (2026-08-16, real YouTube)
+            // showed the widget accepts loadPlaylist and advances between
+            // items on its own, BUT it fires NO onStateChange ENDED between
+            // playlist items — the boundary sequence is -1 → 3 → 1
+            // (UNSTARTED → BUFFERING → PLAYING). playlistDidAdvance() can
+            // only run after a processed ENDED, so the queue, chrome and
+            // metadata panel would desync from what is actually on screen,
+            // and the batch-exhaustion ENDED behaviour is unverified. With
+            // the v3.4.2 proxy fix the ENDED event now actually arrives at a
+            // normal trailer end, so the proven path below (end detection →
+            // advanceInPlace via trLoad, or finish → JS reopens) works
+            // without the playlist. The playlist code is kept intact as the
+            // documented post-mortem; re-enabling it requires solving the
+            // item-boundary sync first (see docs/bugs.md B4).
+            // applyPlaylist()
 
         case "hb":
             // v3.2.0 proxy heartbeat: 1s liveness + progress + the proxy's own

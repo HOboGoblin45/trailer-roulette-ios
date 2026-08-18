@@ -123,10 +123,16 @@ patch on tested work.
 
 ### Also true
 
-- The **Vercel proxy is NOT deployed**. Live is v3.1.0; the repo has v3.2.1+.
-  Deploying needs `cd landing-page`, `vercel login` (interactive browser auth),
-  `vercel --prod`. The app is written to be correct against the v3.1.0 proxy, so
-  this is an enhancement, not a requirement.
+- **The Vercel proxy is NOT deployed — and what IS live is older than this
+  doc claimed.** Verified 2026-08-16: the deployed
+  `https://trailer-roulette.vercel.app/embed` page is byte-for-byte the
+  **v1.9.0** proxy (no `t`/`d` timing on stateChange, no trLoad, no
+  heartbeat, no pin, no epoch). This doc originally said live was v3.1.0 —
+  wrong. Deploying needs `cd landing-page`, `vercel login` (interactive
+  browser auth), `vercel --prod`. **Since v3.4.2 this is a REQUIREMENT, not
+  an enhancement**: the deployed page is the thing that fixes (or keeps
+  breaking) every installed build, including the v3.4.1 build already in
+  TestFlight. See section 6.
 - The **UI work in v3.2.2** (poster stage, swipe-to-dismiss, progress bar,
   exit animations, token conformance across the six fun modes) has never been
   seen running.
@@ -152,63 +158,80 @@ registered. Every native line was unreachable. The lesson: *verify your code is
 reachable before debugging its logic.* One call to
 `Capacitor.isPluginAvailable('TrailerPlayer')` would have found this immediately.
 
+### v3.4.2 — the actual root cause (2026-08-16, proven live)
+
+With the bridge fixed, the REAL reason no trailer has ever auto-advanced was
+found and proven against real YouTube: **the proxy page never subscribes to
+player events.** The IFrame API only delivers `onStateChange`/`onError` after
+an explicit `addEventListener` command; the page only ever sent
+`{ event:'listening' }` (which arms the player but doesn't subscribe to its
+state). A/B test on the same page and port: a listening-only frame delivered
+ZERO state events across a full video while `infoDelivery` kept streaming
+(so every liveness timer believed the page was healthy); the identical page
+plus one `addEventListener('onStateChange')` delivered PLAYING at ~1.4s and
+ENDED at the end. Five releases retuned end detection against an event that
+never arrived. v3.4.2 fixes the proxy (subscribe + one 2.5s retry, player-level
+so trLoad swaps don't double-subscribe) and gates off the v3.4.0 playlist
+handoff (no ENDED fires between playlist items — sequence `-1→3→1` — so
+`playlistDidAdvance()` could never run). See `docs/bugs.md` B4.
+
 ---
 
 ## 7. Roadmap
 
 ### P0 — Confirm the plugin bridge actually works
-Nothing else can be judged until this is known.
+Nothing else can be judged until this is known. **v3.4.2 is the build to test**
+(it contains the bridge fix AND the playback fix; v3.4.1 is in TestFlight too
+but predates the fix).
 
-1. Install **v3.4.1** from TestFlight (wait for it to appear; processing takes
-   5-15 min after upload, and the version shown must read 3.4.1).
-2. Add a temporary startup check and surface it on screen or in the About
-   screen's Diagnostics section:
-   ```js
-   import { Capacitor } from '@capacitor/core';
-   console.log('TrailerPlayer native?', Capacitor.isPluginAvailable('TrailerPlayer'));
-   console.log('AirplayPlugin native?', Capacitor.isPluginAvailable('AirplayPlugin'));
-   ```
-   Both must be `true` on device. If either is `false`, the registration fix did
-   not take and everything below is blocked.
+1. Install **v3.4.2** from TestFlight (wait for it to appear; processing takes
+   5-15 min after upload, and the version shown must read 3.4.2).
+2. Open **About** — the version block now shows a plugin status line:
+   `Native player: active · AirPlay: active`. Both must read `active` on
+   device. If either says `MISSING`, the registration fix did not take and
+   everything below is blocked.
 3. Confirm by eye: tapping Play should open a **full-screen modal with the app's
    own glass header** (Done, Skip, mute). If you instead see YouTube's title bar,
    channel name and wordmark, the native plugin is still not bound.
 
 **Acceptance:** the app's own player chrome is visible during playback.
 
-### P1 — Verify continuous playback
-Only meaningful once P0 passes.
+### P1 — Deploy the proxy FIRST, then verify continuous playback
+**The proxy deploy is now the fix, not an enhancement** — the deployed page is
+v1.9.0 and has never subscribed to player events, so no installed build can
+auto-advance until it is redeployed. This is also the only step that can fix a
+phone without a new app build.
 
-- Press Play once. Watch three trailers end to end without touching anything.
-- Expected: each ends and the next starts with no replay button and no tap.
-- v3.4.0 hands the queue to YouTube via `loadPlaylist`
-  (`applyPlaylist()` in `TrailerPlayer.swift`); if that does not take, a 4s
-  timer falls back to the hand-rolled advance. Check the Xcode/console log line
-  `playlist handed to YouTube: N videos` versus `playlist handoff timed out`.
-
-**Acceptance:** three consecutive trailers with zero taps.
-
-### P2 — Deploy the Vercel proxy
 ```
 cd landing-page
 vercel login
 vercel --prod
 ```
-Unlocks the 1s liveness heartbeat, the content-duration pin, and the epoch
-token. Verify with:
+Verify the new page is live:
 ```
-curl -s "https://trailer-roulette.vercel.app/embed?v=dQw4w9WgXcQ" | findstr announcePlaying
+curl -s "https://trailer-roulette.vercel.app/embed?v=dQw4w9WgXcQ" | grep announcePlaying
 ```
-A match means the new page is live. No match means it is still v3.1.0.
+A match means the v3.4.2 page is live. (v1.9.0's page has no
+`announcePlaying`; it also has no heartbeat, pin, epoch or trLoad.)
 
-### P3 — Device pass on the unverified UI
+Then press Play once and watch three trailers end to end without touching
+anything. Expected: each ends and the next starts with no replay button and no
+tap. v3.4.2 advances via end detection → `advanceInPlace` (`trLoad` swap);
+the v3.4.0 `loadPlaylist` handoff is disabled (see section 6 / bugs.md B4).
+If the first trailer still stops on YouTube's replay screen, check the
+Xcode/console log for `playlist handed to YouTube` (should NOT appear in
+v3.4.2) and the native `handleEndCandidate` path.
+
+**Acceptance:** three consecutive trailers with zero taps.
+
+### P2 — Device pass on the unverified UI
 Every layout value in v3.2.2/3.3.0 is reasoned, never seen. Check on a real
 phone: the six fun modes, the About-this-movie sheet, the theater picker, and
 landscape (presentation changed to `.overFullScreen`, and UIKit only consults a
 *fullscreen* presented controller for orientation, so landscape may have been
 lost).
 
-### P4 — Deferred, non-blocking
+### P3 — Deferred, non-blocking
 - Affiliate id for "Get tickets": paste into `TICKET_AFFILIATE_ID` at the top of
   `app/src/components/MovieSheet.jsx`. One line.
 - App Store screenshots are pre-3.x and stale.

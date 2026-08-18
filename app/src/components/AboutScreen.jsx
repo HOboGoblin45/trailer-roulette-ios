@@ -62,6 +62,14 @@ export default function AboutScreen({ open = true, onClose }) {
         <h2>Trailer Roulette</h2>
         <p className="tagline">Random movie trailers from every era of cinema.</p>
         <p className="version">v{VERSION} · {platform}</p>
+        {/* P0 diagnostic (handoff §7): the v3.4.1 bridge fix only matters if
+            the native plugins are actually registered. Both lines must read
+            "active" on a real device; "MISSING" means the Capacitor bridge
+            did not bind the plugin and playback falls back to web behaviour. */}
+        <p className="version">
+          Native player: {Capacitor.isPluginAvailable('TrailerPlayer') ? 'active' : 'MISSING'}
+          · AirPlay: {Capacitor.isPluginAvailable('AirplayPlugin') ? 'active' : 'MISSING'}
+        </p>
       </section>
 
       <section className="about-section">

@@ -4,6 +4,49 @@ All notable changes to Trailer Roulette. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [3.4.2] — 2026-08-16
+
+**The missing event.** Trailers have played to their end and stopped on
+YouTube's replay screen since v1.x, through five releases. Root cause, proven
+live against real YouTube: the Vercel proxy page only ever sent the IFrame
+API's `{ event:'listening' }` message. That arms the player but never asks
+YouTube to *report* its state — `onStateChange`/`onError` are only delivered
+after an explicit `addEventListener` command. Without it, the widget's state
+channel is silent for the whole clip (while `infoDelivery` keeps streaming, so
+every liveness and end-detection timer believed the page was healthy), and the
+`ENDED` event every end-detection mirror waits on never arrives. Five releases
+relocated the failure (ad-aware end detection, heartbeats, pins, playlist
+handoff) by retuning consumers of an event that never reached the page.
+
+### Fixed
+- **The proxy now subscribes to player events** (`landing-page/api/embed.js`):
+  sends `addEventListener('onStateChange')` + `addEventListener('onError')`
+  after the iframe loads, and retries once at 2.5s if no state event has
+  arrived (a landed subscription delivers its first state event within
+  ~1.5s). The subscription is player-level and survives `loadVideoById`
+  (`trLoad`), so swaps never double-subscribe. This makes the real `ENDED`
+  reach every existing end-detection path in the proxy — and because the
+  proxy is the only layer that reaches already-installed builds, **deploying
+  it fixes the v3.4.1 build already in TestFlight without a new app build**.
+- **Native playlist handoff disabled** (`TrailerPlayer.swift`). v3.4.0 handed
+  the queue to YouTube via `loadPlaylist`. Live observation showed the widget
+  accepts it and advances between items on its own, but fires **no `ENDED`
+  between playlist items** (boundary sequence is `-1 → 3 → 1`), so
+  `playlistDidAdvance()` could never run and the queue/chrome would desync;
+  batch-exhaustion behaviour is unverified. The proven path (end detection →
+  `advanceInPlace` via `trLoad`, or `finish` → JS reopens) now has its input
+  event and works without the playlist. Code kept as documented post-mortem;
+  re-enabling requires solving item-boundary sync (docs/bugs.md B4).
+- Proxy behaviour tests now cover the subscription contract (4 new tests,
+  171 total).
+
+### Notes
+- **Charlie must redeploy the proxy** for any of this to reach a phone:
+  `cd landing-page`, `vercel login`, `vercel --prod`. This is the fix that
+  actually changes playback on installed builds.
+- v3.4.2 then goes to TestFlight via the usual tag push; P0 (plugin bridge
+  confirmed) is still to be eyeballed on device once 3.4.2 appears there.
+
 ## [3.4.1] — 2026-08-14
 
 **The native plugins were never registered.** Everything below explains why the

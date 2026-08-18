@@ -15,38 +15,47 @@ second channel type: **Theater Mode** — tune the roulette to a real independen
 (Alamo Drafthouse's 23 markets) and it spins only what that theater is showing this month.
 
 - Bundle ID `app.trailerroulette.ios` · Apple ID 6764209094 · repo `github.com/HOboGoblin45/trailer-roulette-ios`
-- v1.0 (build 2.11.0) was submitted to App Review 2026-07-03 (manual release). v3.1.0 is
-  committed/tagged. **v3.2.2 is complete in this working tree but NOT yet committed/pushed.**
-  (v3.2.0 and v3.2.1 were never tagged; v3.2.2 carries all three.)
+- v1.0 (build 2.11.0) was submitted to App Review 2026-07-03 (manual release). Latest
+  release: **v3.4.2** (2026-08-16) — the auto-advance root-cause fix. v3.4.1 fixed the
+  unregistered native plugins (`CAPBridgedPlugin`); v3.4.2 fixes the proxy's missing
+  player-event subscription and disables the v3.4.0 playlist handoff. See CHANGELOG.
 
-## Current objective (as of 2026-08-14)
+## Current objective (as of 2026-08-16)
 
-Ship **v3.2.2**, which contains four things (full detail: `docs/PROJECT-PROMPT.md`):
+Ship **v3.4.2** and confirm it on a device. Two parts (full detail:
+`docs/bugs.md` B4, `docs/HANDOFF.md` §6–7):
 
-1. **The ~13s cut-off fix.** Trailers skipped to the next one after ~13 seconds. Root
-   cause: the native 12s watchdog required a PLAYING event, but several YouTube pre-roll
-   ad variants keep the content player UNSTARTED while the ad runs — live trailers were
-   skipped as "unplayable". Liveness-based watchdog, hardened end detection, in all three
-   mirrors. See `docs/bugs.md` B2.
-2. **The corrections that actually cure it (v3.2.1).** The v3.2.0 work was right about the
-   cause and wrong about the cure in three ways, all the same mistake — trusting
-   `onStateChange` in a bug defined by `onStateChange` not firing. See `docs/bugs.md` B3.
-   The one that matters most operationally: **a proxy redeploy now fixes phones that are
-   already out there.** Shipped builds only cancel their watchdog on a `stateChange:1`,
-   so the proxy synthesises one (`syn:true`) as soon as playback demonstrably advances.
-3. **UI audit + native player feel (v3.2.2).** Exit animations everywhere (`src/lib/useDismissAnimation.js`, `src/features/overlay.js`), a working Reduce Motion rule, 44pt tap targets, design-token conformance across the six modes, and a native player that opens on the movie's artwork instead of black, dismisses by swipe, auto-hides its chrome and shows a progress bar fed by the existing heartbeat. See CHANGELOG 3.2.2.
-4. **Theater Mode.** Directory + picker + monthly live lineups from Alamo's public JSON
-   API, matched to TMDB, spun through the existing roulette. See `docs/THEATER-MODE.md`.
+1. **The missing event — the actual root cause of "trailer never auto-advances".**
+   Proven live against real YouTube (2026-08-16): the proxy page
+   (`landing-page/api/embed.js`) only ever sent the IFrame API's
+   `{ event:'listening' }` message, which arms the player but never subscribes to
+   its state. `onStateChange`/`onError` are delivered only after an explicit
+   `addEventListener` command; without it the widget's state channel is silent
+   for the whole clip (while `infoDelivery` keeps streaming, so every liveness
+   timer believed the page was healthy) and the `ENDED` every end-detection
+   mirror waits on never arrives. B1–B3 all tuned consumers of that absent
+   event. The proxy now sends `addEventListener('onStateChange')` +
+   `addEventListener('onError')` on load with one 2.5s retry; the subscription
+   is player-level and survives `trLoad` swaps (no double-subscribe).
+2. **Native playlist handoff disabled** (`TrailerPlayer.swift`). v3.4.0 handed
+   the queue to YouTube via `loadPlaylist`; live observation showed the widget
+   advances items itself but fires **no ENDED between items** (`-1 → 3 → 1`), so
+   `playlistDidAdvance()` could never run and the queue/chrome desyncs. Gated
+   off (call site documented); the proven end-detection → `advanceInPlace`
+   (`trLoad`) path now has its input event.
 
 **To ship (Charlie must do; AI has no push creds / no Mac here):**
-1. **Redeploy the Vercel proxy FIRST — this is the step that fixes the live app**, with no
-   App Review round trip: `cd landing-page` then `npx vercel --prod`. Then re-test on the
-   phone before doing anything else; the currently-installed build should stop skipping.
-2. `git add -A; git commit -m "release: v3.2.2 - Theater Mode + fix trailers cut short + UI/player-feel overhaul"; git tag v3.2.2; git push origin main; git push origin v3.2.2`
-   (paste as separate lines — his PowerShell is 5.1, don't use `07-release.ps1`).
+1. **Redeploy the Vercel proxy FIRST — this is the step that fixes the live
+   app**, with no App Review round trip: `cd landing-page` then `npx vercel
+   --prod` (interactive browser login). The currently deployed page is v1.9.0
+   (verified byte-identical 2026-08-16) and has never subscribed to player
+   events, so NO installed build can auto-advance until this lands. It also
+   fixes the v3.4.1 build already in TestFlight.
+2. `git add -A; git commit -m "release: v3.4.2 - ..."; git tag v3.4.2; git push origin main; git push origin v3.4.2`
+   (paste as separate lines — his PowerShell is 5.1, don't use `&&` chains).
 3. The tag push triggers `.github/workflows/ios-release.yml` → TestFlight.
-4. App Store screenshots are still pre-3.x and stale; regenerate before the next
-   marketing push (`scripts/capture-screenshots.mjs`, `capture-ipad-screenshots.mjs`).
+4. On device: About screen must show `Native player: active · AirPlay: active`
+   (P0), then Play and watch three trailers auto-advance with zero taps (P1).
 
 **Ordering rule for this class of bug:** the proxy is the only layer that reaches
 already-installed builds. Any playback fix must be expressible in the message vocabulary

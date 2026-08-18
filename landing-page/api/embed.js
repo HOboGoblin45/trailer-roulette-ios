@@ -54,6 +54,24 @@
  *      from initialDelivery (player metadata for the cued video), and the
  *      fast-path requires a pin rather than treating "no pin" as a match.
  *
+ * v3.4.2: THE MISSING EVENT. The root cause of every "trailer does not
+ * advance" report since v1.x: this page only ever sent the IFrame API's
+ * { event:'listening' } message, which arms the player but never asks YouTube
+ * to REPORT its state. The IFrame API delivers onStateChange (and onError)
+ * only after an explicit addEventListener command; without one, infoDelivery
+ * keeps streaming (so liveness/end-detection timers all believe the page is
+ * healthy) while the state channel stays silent for the whole clip —
+ * including the ENDED event every end-detection mirror waits on. Five
+ * releases tuned the same end-detection logic against that event; none of
+ * it could run because the event never arrived. The page now sends
+ * addEventListener('onStateChange') and addEventListener('onError') on
+ * load, and retries once if no state event arrives within 2.5s (the widget
+ * may drop commands posted before it finishes booting; a landed
+ * subscription delivers its first state event within ~1.5s, so 2.5s of
+ * silence means the send failed). The subscription is player-level and
+ * survives loadVideoById, so a trLoad swap never re-subscribes (no
+ * duplicate events).
+ *
  * All additions are backward compatible: older native builds ignore unknown
  * kinds ('hb', 'meta') and extra fields, and this page still forwards the
  * same { kind:'stateChange', state, t, d } events they expect.
@@ -183,8 +201,52 @@ export default async function handler(request) {
     sendListening();
     setTimeout(sendListening, 500);
     setTimeout(sendListening, 1500);
+    subscribeToPlayerEvents();
+    // If the first subscription raced the iframe's own bootstrap and was
+    // lost, we will never receive an onStateChange. A landed subscription
+    // delivers its first state event within ~1.5s, so by 2.5s we know it
+    // failed — retry once. The flag guards against a duplicate subscription
+    // in the normal case where the first try landed.
+    setTimeout(function () {
+      if (!youtubeEventsSeen) { playerSubscriptionSent = false; subscribeToPlayerEvents(); }
+    }, 2500);
     toNative({ kind: 'iframeLoaded' });
   });
+
+  // v3.4.2: the IFrame API only delivers onStateChange / onError AFTER we
+  // send an explicit addEventListener command. This page previously only
+  // ever sent { event:'listening' }; that arms the player for WHAT TO PLAY
+  // but never asks YouTube to TELL us what it is doing. The API then reports
+  // the video is playing (infoDelivery currentTime advances, which is all the
+  // liveness/heartbeat logic needs), but the player's own state channel stays
+  // silent for the entire clip — including its end. Every build's end
+  // detection waits on onStateChange:0 (ENDED), so the event never arrives,
+  // no trailer ever auto-advances, and the app strands on YouTube's replay
+  // screen. Five releases "moved" this bug by retuning the same end-detection
+  // logic against an event that never reached the page: none of it could run.
+  // The subscription must be sent once per PLAYER LIFETIME, not per video:
+  // it survives loadVideoById (trLoad) and playlist advance, so re-sending it
+  // on every swap would just risk duplicate events. We send it here on load,
+  // and defensively after a trLoad only if no state event has ever been
+  // observed (the widget may drop commands posted before it finishes
+  // booting; the 2.5s retry above covers that race).
+  var playerSubscriptionSent = false; // the command has been POSTed
+  var youtubeEventsSeen = false;      // an actual onStateChange has arrived
+  function subscribeToPlayerEvents() {
+    if (youtubeEventsSeen || playerSubscriptionSent) return;
+    playerSubscriptionSent = true;
+    try {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'] }),
+        'https://www.youtube-nocookie.com'
+      );
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onError'] }),
+        'https://www.youtube-nocookie.com'
+      );
+    } catch (e) {}
+  }
+  function notePlayerEvent() { youtubeEventsSeen = true; }
 
   // Ad-hardened end detection (v3.2.0, corrected v3.2.1) -----------------
   // Mirrors app/src/lib/endDetection.js — see that file for the full design.
@@ -275,6 +337,11 @@ export default async function handler(request) {
       // Re-assert our event listener against the freshly-loaded video.
       setTimeout(sendListening, 200);
       setTimeout(sendListening, 800);
+      // The state subscription is player-level and survives loadVideoById,
+      // so this only fires if events never arrived at all (defensive).
+      setTimeout(function () {
+        if (!youtubeEventsSeen) { playerSubscriptionSent = false; subscribeToPlayerEvents(); }
+      }, 1200);
       return true;
     } catch (e) { return false; }
   };
@@ -295,6 +362,7 @@ export default async function handler(request) {
     }
     if (!data || !data.event) return;
     sawYt = true;
+    if (data.event === 'onStateChange') notePlayerEvent();
 
     if (data.event === 'infoDelivery' || data.event === 'initialDelivery') {
       var info = data.info || {};
