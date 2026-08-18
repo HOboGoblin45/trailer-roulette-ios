@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   pickDiscoverPage, TMDB_MAX_DISCOVER_PAGE, discoverMovies,
   discoverRandomMix, eraStrata, CATALOG_START_YEAR, filtersQuery, catalogDecades,
+  discoverFilteredMix,
 } from '../tmdb.js';
 
 describe('pickDiscoverPage', () => {
@@ -202,6 +203,69 @@ describe('filtersQuery — decade + genre filter params (v3.4.3)', () => {
   it('ignores non-numeric genre ids instead of emitting NaN', () => {
     const q = filtersQuery({ genres: [28, 'bogus', 35] });
     expect(q.with_genres).toBe('28,35');
+  });
+});
+
+describe('discoverFilteredMix — samples within a small filtered corpus', () => {
+  let calls;
+  beforeEach(() => {
+    calls = [];
+    global.fetch = vi.fn(async (url) => {
+      const p = Number(new URL(url).searchParams.get('page') || 1);
+      calls.push(p);
+      const base = (p - 1) * 2;
+      return {
+        ok: true,
+        json: async () => ({
+          results: [{ id: base + 1 }, { id: base + 2 }],
+          total_pages: 3,
+        }),
+      };
+    });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  // The bug the headless run caught: sampling a random page across 1..500
+  // mostly lands past a small filtered corpus (~3 pages here) and comes back
+  // empty. discoverFilteredMix must stay within the corpus.
+  it('never requests a page beyond the filtered corpus page count', async () => {
+    await discoverFilteredMix({ genres: [27], decades: [1980] });
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((p) => p >= 1 && p <= 3)).toBe(true);
+    expect(Math.max(...calls)).toBeLessThanOrEqual(3);
+  });
+
+  it('always includes page 1 and de-dupes across sampled pages', async () => {
+    const mix = await discoverFilteredMix({ genres: [27], decades: [1980] });
+    expect(calls).toContain(1);
+    const ids = mix.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(mix.length).toBeGreaterThan(0);
+  });
+
+  it('does not sample extra pages when the corpus is a single page', async () => {
+    global.fetch = vi.fn(async (url) => {
+      calls.push(Number(new URL(url).searchParams.get('page') || 1));
+      return { ok: true, json: async () => ({ results: [{ id: 7 }], total_pages: 1 }) };
+    });
+    const mix = await discoverFilteredMix({ genres: [27] });
+    expect(calls).toEqual([1]); // only page 1, no wasteful sample
+    expect(mix.map((m) => m.id)).toEqual([7]);
+  });
+
+  it('degrades to page-1-only when an extra page fetch fails', async () => {
+    let n = 0;
+    global.fetch = vi.fn(async (url) => {
+      const p = Number(new URL(url).searchParams.get('page') || 1);
+      calls.push(p);
+      n += 1;
+      if (p !== 1) throw new Error('network');
+      return { ok: true, json: async () => ({ results: [{ id: 9 }], total_pages: 4 }) };
+    });
+    const mix = await discoverFilteredMix({ genres: [35] }).catch(() => null);
+    // The batch-level promise must not reject; it returns page 1 at worst.
+    expect(Array.isArray(mix)).toBe(true);
+    expect(mix.map((m) => m.id)).toContain(9);
   });
 });
 

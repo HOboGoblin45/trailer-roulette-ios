@@ -9,7 +9,7 @@ import FunSheet from '../features/FunSheet.jsx';
 import { FEATURES } from '../features/index.js';
 import { useOverlay } from '../features/overlay.js';
 import {
-  discoverMovies, discoverRandomMix, getTrailer, pickDiscoverPage,
+  discoverMovies, discoverRandomMix, discoverFilteredMix, getTrailer, pickDiscoverPage,
   toTrailerCandidate, genreNames, backdropUrl, posterUrl,
 } from '../lib/tmdb.js';
 import { getTheaterQueue, monthLabel } from '../lib/theaters.js';
@@ -192,14 +192,10 @@ export default function TrailerRoulette() {
         const filtered = flt && (flt.decades?.length || flt.genres?.length);
         let results = [];
         if (filtered) {
-          const pages = await Promise.all([
-            discoverMovies({ genres: flt.genres, decades: flt.decades, page: pickDiscoverPage(500) }),
-            discoverMovies({ genres: flt.genres, decades: flt.decades, page: pickDiscoverPage(500) }),
-            discoverMovies({ genres: flt.genres, decades: flt.decades, page: pickDiscoverPage(500) }),
-          ]);
-          const seen = new Set();
-          results = [].concat(...pages.map((d) => d.results || []))
-            .filter((m) => m && !seen.has(m.id) && seen.add(m.id));
+          // Sample WITHIN the filtered corpus (learn its page count first) so
+          // a small niche doesn't come back empty and silently fall back to
+          // Everything. See discoverFilteredMix in tmdb.js.
+          results = await discoverFilteredMix({ genres: flt.genres, decades: flt.decades });
         }
         if (!results.length) {
           // No filter, or the filter came back empty — the unfiltered mix.

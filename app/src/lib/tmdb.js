@@ -127,6 +127,42 @@ export async function discoverMovies({ genre, genres, decade, decades, era = 'al
   return call('/discover/movie', params);
 }
 
+/**
+ * A filter-friendly batch: learn the filtered corpus's page count from page
+ * 1, then sample extra pages WITHIN it. The queue's unfiltered path samples
+ * a random page in 1..500, but a filtered corpus is small (1980s Horror is
+ * only ~10-20 pages), so blindly sampling 1..500 mostly lands on empty pages
+ * and the feed would silently fall back to Everything. First page always
+ * included; up to `pages` extra random pages within [1, total_pages].
+ * A failed extra-page fetch degrades gracefully (page 1 alone still returns).
+ */
+export async function discoverFilteredMix({ genres = [], decades = [], pages = 3 } = {}) {
+  const q = { genres, decades };
+  const first = await discoverMovies({ ...q, page: 1 });
+  const total = Math.max(1, first.total_pages || 1);
+  const seen = new Set();
+  const results = [];
+  for (const m of first.results || []) {
+    if (m && !seen.has(m.id)) { seen.add(m.id); results.push(m); }
+  }
+  if (total > 1) {
+    const attempted = new Set([1]);
+    let guard = 0;
+    while (attempted.size < Math.min(pages, total) + 1 && guard < 50) {
+      guard += 1;
+      const p = pickDiscoverPage(total);
+      if (p === 1 || attempted.has(p)) continue;
+      attempted.add(p);
+      const d = await discoverMovies({ ...q, page: p }).catch(() => null);
+      if (!d) continue;
+      for (const m of d.results || []) {
+        if (m && !seen.has(m.id)) { seen.add(m.id); results.push(m); }
+      }
+    }
+  }
+  return results;
+}
+
 // TMDB's /discover endpoint paginates the full catalog (20 results per page)
 // but only exposes the first 500 pages. We pick a random page within the
 // known range so the queue keeps drawing fresh movies from deep in the
